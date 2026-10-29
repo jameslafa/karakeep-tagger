@@ -4,6 +4,7 @@ services:
     container_name: karakeep-tagger
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
-    # .env holds KARAKEEP_URL, KARAKEEP_API_KEY and optionally TAGGER_PASSWORD
+      # Host address and port to publish on; set TAGGER_PUBLISH in .env to change it
+      - "${TAGGER_PUBLISH:-127.0.0.1:8080}:8080"
+    # Settings (KARAKEEP_URL, KARAKEEP_API_KEY, TAGGER_HOSTS, ...): see .env.example
     env_file: .env

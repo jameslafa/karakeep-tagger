@@ -234,9 +234,10 @@ function applyFilter() {
 }
 
 // ---------- Grid ----------
-// Colima's port forwarder drops connections when Tailscale opens hundreds at once (it reports
-// them as 502), so grid images load at most GRID_LOADS at a time, nearest-to-view first, and a
-// failed image is retried a few times. The ?retry= query avoids a cached failure.
+// Some reverse proxies and port forwarders drop connections when a fast scroll requests hundreds
+// of images at once (seen as 502s), so grid images load at most GRID_LOADS at a time,
+// nearest-to-view first, and a failed image is retried a few times. The ?retry= query avoids a
+// cached failure.
 function loadAsset(img, assetId, done = () => {}) {
   const url = `/api/assets/${encodeURIComponent(assetId)}`;
   let tries = 0;
