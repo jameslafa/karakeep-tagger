@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karakeep Tagger</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111317'/%3E%3Cpath d='M6 7.5A1.5 1.5 0 0 1 7.5 6H15l11 11-9 9L6 15z' fill='%235b9dff'/%3E%3Ccircle cx='11' cy='11' r='2.2' fill='%23111317'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #111317; --panel: #1a1d23; --panel-2: #23272f; --line: #2f343d;
+    --text: #e6e8eb; --muted: #8b929c; --accent: #5b9dff; --accent-2: #2a4a7a;
+    --danger: #ff6b6b; --radius: 8px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent-2); border-color: var(--accent); }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; } /* rules like #viewer { display: grid } would otherwise override it */
+
+  header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+           padding: 10px 16px; background: rgba(17,19,23,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; max-width: 260px; }
+  header .spacer { flex: 1; }
+  #stale { border-color: #b8860b; }
+
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; padding: 16px; user-select: none; }
+  .card { position: relative; background: var(--panel); border: 2px solid transparent; border-radius: var(--radius); overflow: hidden; cursor: pointer; outline: none; }
+  .card img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--panel-2); }
+  .card.focused { border-color: var(--muted); }
+  .card.selected { border-color: var(--accent); }
+  .card.selected::after { content: "✓"; position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 50%;
+                          background: var(--accent); color: #fff; font-size: 13px; display: grid; place-items: center; }
+  .card.stale { opacity: .4; }
+  .card .actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity .1s; }
+  .card:hover .actions, .card.focused .actions { opacity: 1; }
+  .card .actions button { padding: 2px 7px; background: rgba(17,19,23,.85); }
+  .card .tags { padding: 5px 7px; min-height: 28px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .tags b { font-weight: normal; color: var(--text); }
+  #empty { padding: 60px 16px; text-align: center; }
+
+  footer { padding: 8px 16px 24px; color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+
+  /* Tag editor (shared by pop-over and viewer) */
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent-2); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 3px 1px 9px; font-size: 13px; }
+  .chip.partial { background: transparent; border-style: dashed; cursor: pointer; }
+  .chip.partial .n { color: var(--muted); margin-left: 4px; font-size: 11px; }
+  .chip.ai { border-color: #7a6bd6; }
+  .chip button { border: 0; background: none; padding: 0 5px; color: var(--muted); border-radius: 999px; }
+  .chip button:hover, .chip button:focus-visible { color: var(--danger); }
+  .field { position: relative; }
+  .field input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; outline: none; }
+  .field input:focus { border-color: var(--accent); }
+  .suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5; margin: 0; padding: 4px; list-style: none;
+             background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; max-height: 260px; overflow: auto; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .suggest li { padding: 5px 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .suggest li.hi { background: var(--accent-2); }
+  .suggest li .n { color: var(--muted); font-size: 12px; }
+  .suggest li.create { font-style: italic; }
+  .suggest li.remove { color: var(--danger); }
+
+  #pop { position: fixed; z-index: 20; width: 320px; max-width: calc(100vw - 16px); background: var(--panel); border: 1px solid var(--line);
+         border-radius: var(--radius); padding: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  #pop h2, #viewer h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+
+  #viewer { position: fixed; inset: 0; z-index: 30; background: rgba(8,9,11,.97); display: grid; grid-template-columns: 1fr 340px; }
+  #viewer .stage { position: relative; display: grid; place-items: center; min-height: 0; padding: 16px; }
+  #viewer .stage img { max-width: 100%; max-height: calc(100vh - 32px); object-fit: contain; }
+  #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 22px; padding: 10px 14px; background: rgba(26,29,35,.7); }
+  #viewer .prev { left: 12px; } #viewer .next { right: 12px; }
+  #viewer aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+  #viewer .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #viewer .name { word-break: break-all; color: var(--muted); font-size: 12px; }
+  #viewer .hints { margin-top: auto; color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+  @media (max-width: 760px) {
+    #viewer { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
+    #viewer .stage img { max-height: calc(55vh - 32px); }
+    #viewer aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
+
+  #toast { position: fixed; z-index: 40; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line);
+           border-radius: 6px; padding: 8px 14px; max-width: calc(100vw - 32px); }
+  #toast.error { border-color: var(--danger); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Karakeep Tagger</h1>
+  <select id="filter" title="Filter (F)"></select>
+  <span id="count" class="muted"></span>
+  <button id="stale" hidden title="Re-apply filter (R)"></button>
+  <span class="spacer"></span>
+  <span id="selcount" class="muted"></span>
+  <button id="selectAll" title="Select all (⌘/Ctrl+A)">Select all</button>
+  <button id="clearSel" title="Clear selection (Esc)" disabled>Clear</button>
+  <button id="tagSel" class="primary" title="Tag selected (T)" disabled>Tag selected…</button>
+</header>
+
+<main id="grid" aria-label="Images"></main>
+<div id="empty" class="muted" hidden>Loading…</div>
+
+<footer>
+  <span><kbd>Click</kbd> select</span><span><kbd>Shift</kbd>+click range</span><span><kbd>⌘/Ctrl A</kbd> all</span>
+  <span><kbd>←↑→↓</kbd> move (<kbd>Shift</kbd> extends)</span><span><kbd>Space</kbd> toggle</span>
+  <span><kbd>T</kbd> tag</span><span><kbd>Enter</kbd>/double-click open</span><span><kbd>F</kbd> filter</span>
+  <span><kbd>R</kbd> re-apply filter</span><span><kbd>Esc</kbd> clear</span>
+</footer>
+
+<div id="pop" hidden role="dialog" aria-label="Edit tags"><h2></h2><div class="editor"></div></div>
+
+<div id="viewer" hidden role="dialog" aria-label="Image viewer">
+  <div class="stage">
+    <img alt="">
+    <button class="nav prev" title="Previous (←)">‹</button>
+    <button class="nav next" title="Next (→)">›</button>
+  </div>
+  <aside>
+    <div class="top"><h2 class="pos"></h2><button class="close" title="Close (Esc)">✕</button></div>
+    <div class="name"></div>
+    <div class="editor"></div>
+    <div class="hints">
+      <span><kbd>Enter</kbd> add tag · <kbd>Tab</kbd> complete · <kbd>↑↓</kbd> choose</span>
+      <span><kbd>-name</kbd> remove a tag</span>
+      <span><kbd>←</kbd><kbd>→</kbd> prev/next (when the field is empty)</span>
+      <span><kbd>Enter</kbd> on empty field → next · <kbd>Esc</kbd> close</span>
+    </div>
+  </aside>
+</div>
+
+<div id="toast" hidden></div>
+
+<script>
+"use strict";
+const $ = (s, root = document) => root.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+const state = {
+  all: [],              // image bookmarks, Karakeep order
+  byId: new Map(),
+  knownTags: new Set(), // every tag name in Karakeep, for autocomplete
+  view: [],             // bookmarks currently shown (snapshot taken when the filter is applied)
+  filter: "all",        // "all" | "untagged" | "tag:<name>"
+  selected: new Set(),
+  anchor: null,         // index in view for shift ranges
+  focus: 0,
+};
+const cards = new Map(); // bookmark id -> card element
+const grid = $("#grid");
+
+// ---------- API ----------
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+let toastTimer;
+function toast(msg, error = false) {
+  const t = $("#toast");
+  t.textContent = msg; t.className = error ? "error" : ""; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), error ? 6000 : 2500);
+}
+
+// Mutations run one at a time, applied optimistically. Server state is only
+// written back once no newer change for that bookmark is still queued.
+let queue = Promise.resolve();
+const pending = new Map();
+function mutate(ids, add = [], remove = []) {
+  if (!ids.length || (!add.length && !remove.length)) return;
+  const before = new Map(ids.map(id => [id, state.byId.get(id).tags]));
+  for (const id of ids) {
+    const b = state.byId.get(id), t = new Set(b.tags);
+    add.forEach(n => t.add(n)); remove.forEach(n => t.delete(n));
+    b.tags = [...t].sort(cmp);
+    pending.set(id, (pending.get(id) || 0) + 1);
+  }
+  add.forEach(n => state.knownTags.add(n));
+  changed(ids);
+
+  queue = queue.then(async () => {
+    let updated = [], failed = [];
+    try {
+      ({ updated, failed } = await api("/api/tags/bulk", { method: "POST", body: JSON.stringify({ bookmarkIds: ids, add, remove }) }));
+    } catch (e) {
+      failed = ids.map(id => ({ id, message: e.message }));
+    }
+    const settle = id => { const n = pending.get(id) - 1; n ? pending.set(id, n) : pending.delete(id); return !n; };
+    for (const u of updated) if (settle(u.id)) state.byId.get(u.id).tags = u.tags;
+    for (const f of failed) if (settle(f.id)) state.byId.get(f.id).tags = before.get(f.id);
+    if (failed.length) toast(`Failed on ${failed.length} of ${ids.length}: ${failed[0].message}`, true);
+    else if (ids.length > 1) toast(`Updated ${ids.length} images`);
+    changed(ids);
+  });
+}
+
+// ---------- Filter ----------
+const matches = b => state.filter === "all" ? true
+  : state.filter === "untagged" ? b.tags.length === 0
+  : b.tags.includes(state.filter.slice(4));
+
+function tagCounts() {
+  const counts = new Map();
+  for (const b of state.all) for (const t of b.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  return counts;
+}
+
+function renderFilter() {
+  const sel = $("#filter"), counts = tagCounts();
+  const opts = [["all", `All images (${state.all.length})`], ["untagged", `Untagged (${state.all.filter(b => !b.tags.length).length})`]];
+  const names = [...counts.keys()];
+  if (state.filter.startsWith("tag:") && !counts.has(state.filter.slice(4))) names.push(state.filter.slice(4));
+  for (const n of names.sort(cmp)) opts.push(["tag:" + n, `${n} (${counts.get(n) || 0})`]);
+  sel.replaceChildren(...opts.map(([v, label]) => { const o = el("option", null, label); o.value = v; return o; }));
+  sel.value = state.filter;
+}
+
+function applyFilter() {
+  state.view = state.all.filter(matches);
+  const inView = new Set(state.view.map(b => b.id));
+  for (const id of state.selected) if (!inView.has(id)) state.selected.delete(id);
+  state.anchor = null;
+  state.focus = clamp(state.focus, 0, Math.max(0, state.view.length - 1));
+  renderGrid();
+}
+
+// ---------- Grid ----------
+// Colima's port forwarder drops connections when Tailscale opens hundreds at once (it reports
+// them as 502), so grid images load at most GRID_LOADS at a time, nearest-to-view first, and a
+// failed image is retried a few times. The ?retry= query avoids a cached failure.
+function loadAsset(img, assetId, done = () => {}) {
+  const url = `/api/assets/${encodeURIComponent(assetId)}`;
+  let tries = 0;
+  img.onload = done;
+  img.onerror = () => {
+    if (img.dataset.asset !== assetId) return; // the img moved on
+    if (++tries > 4) return done();
+    setTimeout(() => { if (img.dataset.asset === assetId) img.src = `${url}?retry=${tries}`; }, 500 * 2 ** tries);
+  };
+  img.dataset.asset = assetId;
+  img.src = url;
+}
+
+const GRID_LOADS = 8;
+const nearView = new Set(); // grid imgs near the viewport and not loaded yet, in arrival order
+let gridLoading = 0;
+const imgObserver = new IntersectionObserver((entries) => {
+  for (const e of entries) e.isIntersecting ? nearView.add(e.target) : nearView.delete(e.target);
+  pumpGridLoads();
+}, { rootMargin: "600px" });
+
+function pumpGridLoads() {
+  for (const img of nearView) {
+    if (gridLoading >= GRID_LOADS) return;
+    nearView.delete(img); imgObserver.unobserve(img);
+    gridLoading++;
+    loadAsset(img, img.dataset.pending, () => { gridLoading--; pumpGridLoads(); });
+  }
+}
+
+function cardFor(b) {
+  let c = cards.get(b.id);
+  if (!c) {
+    c = el("div", "card");
+    c.tabIndex = -1;
+    const img = el("img");
+    img.decoding = "async"; img.alt = b.title || b.fileName || "";
+    img.dataset.pending = b.assetId;
+    imgObserver.observe(img);
+    const actions = el("div", "actions");
+    const tagBtn = el("button", "tagbtn", "#"); tagBtn.title = "Tag (T)"; tagBtn.tabIndex = -1;
+    const openBtn = el("button", "openbtn", "⤢"); openBtn.title = "Open (Enter)"; openBtn.tabIndex = -1;
+    actions.append(tagBtn, openBtn);
+    c.append(img, actions, el("div", "tags"));
+    c.dataset.id = b.id;
+    cards.set(b.id, c);
+  }
+  return c;
+}
+
+function updateCard(b) {
+  const c = cards.get(b.id);
+  if (!c) return;
+  const tags = $(".tags", c);
+  if (b.tags.length) {
+    tags.replaceChildren(...b.tags.flatMap((t, i) => i ? [", ", el("b", null, t)] : [el("b", null, t)]));
+    tags.title = b.tags.join(", ");
+  } else { tags.textContent = "untagged"; tags.title = ""; }
+  c.classList.toggle("selected", state.selected.has(b.id));
+  c.classList.toggle("stale", !matches(b));
+}
+
+function renderGrid() {
+  grid.replaceChildren(...state.view.map((b, i) => {
+    const c = cardFor(b); c.dataset.i = i; c.classList.remove("focused"); c.tabIndex = -1; updateCard(b); return c;
+  }));
+  $("#empty").hidden = state.view.length > 0;
+  $("#empty").textContent = "No images match this filter.";
+  setFocus(state.focus, false);
+  updateStatus();
+}
+
+function updateStatus() {
+  const n = state.selected.size;
+  $("#count").textContent = `${state.view.length} image${state.view.length === 1 ? "" : "s"}`;
+  $("#selcount").textContent = n ? `${n} selected` : "";
+  $("#clearSel").disabled = !n;
+  $("#tagSel").disabled = !n;
+  const stale = state.view.filter(b => !matches(b)).length;
+  $("#stale").hidden = !stale;
+  $("#stale").textContent = `${stale} no longer match · re-apply`;
+}
+
+function changed(ids) {
+  for (const id of ids) updateCard(state.byId.get(id));
+  renderFilter();
+  updateStatus();
+  if (!$("#pop").hidden) popEditor.render();
+  if (!$("#viewer").hidden) viewerEditor.render();
+}
+
+function setFocus(i, scroll = true) {
+  if (!state.view.length) return;
+  const prev = cards.get(state.view[state.focus]?.id);
+  if (prev) { prev.classList.remove("focused"); prev.tabIndex = -1; }
+  state.focus = clamp(i, 0, state.view.length - 1);
+  const c = cards.get(state.view[state.focus].id);
+  c.classList.add("focused"); c.tabIndex = 0;
+  if (scroll) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: "nearest" }); }
+}
+
+function setSelected(ids, on) {
+  for (const id of ids) {
+    on ? state.selected.add(id) : state.selected.delete(id);
+    cards.get(id)?.classList.toggle("selected", on);
+  }
+  updateStatus();
+}
+
+function selectRange(a, b) {
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  setSelected(state.view.slice(lo, hi + 1).map(x => x.id), true);
+}
+
+function columns() {
+  const kids = grid.children;
+  if (!kids.length) return 1;
+  const top = kids[0].offsetTop;
+  let n = 0;
+  while (n < kids.length && kids[n].offsetTop === top) n++;
+  return n;
+}
+
+grid.addEventListener("click", e => {
+  const c = e.target.closest(".card");
+  if (!c) return;
+  const i = +c.dataset.i, id = c.dataset.id;
+  if (e.target.closest(".openbtn")) return openViewer(i);
+  if (e.target.closest(".tagbtn")) {
+    setFocus(i);
+    return openPopover(state.selected.has(id) ? [...state.selected] : [id], c);
+  }
+  if (e.shiftKey && state.anchor != null) selectRange(state.anchor, i);
+  else { setSelected([id], !state.selected.has(id)); state.anchor = i; }
+  setFocus(i);
+});
+grid.addEventListener("dblclick", e => {
+  const c = e.target.closest(".card");
+  if (c && !e.target.closest("button")) openViewer(+c.dataset.i);
+});
+
+// ---------- Tag editor (used in pop-over and viewer) ----------
+function TagEditor(root, opts = {}) {
+  const chips = el("div", "chips"), field = el("div", "field"), input = el("input"), list = el("ul", "suggest");
+  input.placeholder = "Add tag…  (-tag removes)";
+  input.autocomplete = "off"; input.spellcheck = false;
+  input.setAttribute("role", "combobox"); input.setAttribute("aria-autocomplete", "list");
+  list.setAttribute("role", "listbox"); list.hidden = true;
+  field.append(input, list);
+  root.append(chips, field);
+  let targets = [], items = [], hi = 0;
+
+  const tagsOn = () => {
+    const counts = new Map();
+    for (const id of targets) for (const t of state.byId.get(id).tags) counts.set(t, (counts.get(t) || 0) + 1);
+    return counts;
+  };
+
+  function render() {
+    const n = targets.length, counts = tagsOn();
+    const names = [...counts.keys()].sort((a, b) => (counts.get(b) === n) - (counts.get(a) === n) || cmp(a, b));
+    chips.replaceChildren(...names.map(name => {
+      const full = counts.get(name) === n;
+      const chip = el("span", "chip" + (full ? "" : " partial"));
+      chip.append(name);
+      if (!full) {
+        chip.append(el("span", "n", `${counts.get(name)}/${n}`));
+        chip.title = `On ${counts.get(name)} of ${n} — click to add to all`;
+        chip.addEventListener("click", ev => { if (!ev.target.closest("button")) mutate(targets, [name]); input.focus(); });
+      }
+      const x = el("button", null, "×"); x.title = `Remove “${name}”`;
+      x.addEventListener("click", () => { mutate(targets.filter(id => state.byId.get(id).tags.includes(name)), [], [name]); input.focus(); });
+      chip.append(x);
+      return chip;
+    }));
+    if (!names.length) chips.append(el("span", "muted", "No tags yet"));
+    suggest();
+  }
+
+  function suggest() {
+    const raw = input.value.trim(), removing = raw.startsWith("-"), q = (removing ? raw.slice(1) : raw).trim().toLowerCase();
+    const on = tagsOn(), usage = tagCounts();
+    items = [];
+    if (removing) {
+      items = [...on.keys()].filter(t => t.toLowerCase().includes(q)).sort(cmp).map(name => ({ name, remove: true }));
+    } else if (q) {
+      const score = t => { const l = t.toLowerCase(); return l === q ? 0 : l.startsWith(q) ? 1 : l.split(/[\s\-_/]+/).some(w => w.startsWith(q)) ? 2 : l.includes(q) ? 3 : 9; };
+      items = [...state.knownTags]
+        .filter(t => on.get(t) !== targets.length && score(t) < 9)
+        .sort((a, b) => score(a) - score(b) || (usage.get(b) || 0) - (usage.get(a) || 0) || cmp(a, b))
+        .slice(0, 8).map(name => ({ name, n: usage.get(name) || 0 }));
+      if (![...state.knownTags].some(t => t.toLowerCase() === q)) items.push({ name: raw, create: true });
+    }
+    hi = clamp(hi, 0, Math.max(0, items.length - 1));
+    draw();
+  }
+
+  function draw() {
+    list.replaceChildren(...items.map((it, i) => {
+      const li = el("li", (i === hi ? "hi " : "") + (it.create ? "create" : it.remove ? "remove" : ""));
+      li.setAttribute("role", "option");
+      li.append(el("span", null, it.create ? `Create “${it.name}”` : it.remove ? `Remove “${it.name}”` : it.name));
+      if (it.n != null) li.append(el("span", "n", it.n));
+      li.addEventListener("mousedown", e => { e.preventDefault(); hi = i; pick(); });
+      return li;
+    }));
+    list.hidden = !items.length;
+    list.children[hi]?.scrollIntoView({ block: "nearest" });
+  }
+
+  // Reuse an existing tag's exact spelling when the typed name only differs in case.
+  const canonical = name => [...state.knownTags].find(t => t.toLowerCase() === name.toLowerCase()) || name;
+
+  function pick() {
+    const it = items[hi];
+    if (!it) return;
+    if (it.remove) mutate(targets.filter(id => state.byId.get(id).tags.includes(it.name)), [], [it.name]);
+    else mutate(targets, [canonical(it.name.trim())]);
+    input.value = ""; hi = 0;
+    suggest();
+  }
+
+  input.addEventListener("input", () => { hi = 0; suggest(); });
+  input.addEventListener("blur", () => { list.hidden = true; });
+  input.addEventListener("focus", () => suggest());
+  input.addEventListener("keydown", e => {
+    if (e.isComposing) return;
+    if (e.key === "ArrowDown" && items.length) { hi = (hi + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp" && items.length) { hi = (hi - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      if (items.length) pick(); else if (!input.value.trim()) opts.onEmptyEnter?.();
+    }
+    else if (e.key === "Tab" && items.length && !items[hi].create && !e.shiftKey) {
+      e.preventDefault();
+      input.value = (items[hi].remove ? "-" : "") + items[hi].name; suggest();
+    }
+    else if (e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation();
+      if (input.value) { input.value = ""; suggest(); } else opts.onEscape?.();
+    }
+    else opts.onKey?.(e, input);
+  });
+
+  return {
+    setTargets(ids) { targets = ids; input.value = ""; hi = 0; render(); },
+    render,
+    focus() { input.focus(); },
+    input,
+  };
+}
+
+// ---------- Pop-over ----------
+const pop = $("#pop");
+let popAnchor = null;
+const popEditor = TagEditor($(".editor", pop), { onEscape: closePopover, onEmptyEnter: closePopover });
+
+function openPopover(ids, anchorEl) {
+  if (!ids.length) return;
+  popAnchor = anchorEl;
+  $("h2", pop).textContent = ids.length === 1 ? "Tag 1 image" : `Tag ${ids.length} images`;
+  popEditor.setTargets(ids);
+  pop.hidden = false;
+  positionPopover();
+  popEditor.focus();
+}
+
+function positionPopover() {
+  if (pop.hidden) return;
+  const pw = pop.offsetWidth, ph = pop.offsetHeight, r = popAnchor?.getBoundingClientRect();
+  const visible = r && r.bottom > 0 && r.top < innerHeight;
+  let left = visible ? r.left : (innerWidth - pw) / 2, top = visible ? r.bottom + 6 : 80;
+  if (visible && top + ph + 270 > innerHeight) top = Math.max(8, r.top - ph - 6); // room for suggestions
+  pop.style.left = clamp(left, 8, innerWidth - pw - 8) + "px";
+  pop.style.top = clamp(top, 8, Math.max(8, innerHeight - ph - 8)) + "px";
+}
+
+function closePopover() {
+  if (pop.hidden) return;
+  pop.hidden = true;
+  setFocus(state.focus);
+}
+
+addEventListener("scroll", positionPopover, { passive: true });
+addEventListener("resize", positionPopover);
+document.addEventListener("mousedown", e => {
+  if (!pop.hidden && !pop.contains(e.target) && !e.target.closest(".tagbtn, #tagSel")) closePopover();
+});
+
+function tagTargets() {
+  if (state.selected.size) return [...state.selected];
+  const b = state.view[state.focus];
+  return b ? [b.id] : [];
+}
+
+function popAnchorFor(ids) {
+  const focused = state.view[state.focus];
+  if (focused && ids.includes(focused.id)) return cards.get(focused.id);
+  return cards.get(ids[ids.length - 1]);
+}
+
+// ---------- Viewer ----------
+const viewer = $("#viewer"), vImg = $(".stage img", viewer);
+let vIndex = 0;
+const viewerEditor = TagEditor($(".editor", viewer), {
+  onEscape: closeViewer,
+  onEmptyEnter: () => step(1),
+  onKey(e, input) {
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !input.value) { e.preventDefault(); step(e.key === "ArrowLeft" ? -1 : 1); }
+    else if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); step(e.key === "PageUp" ? -1 : 1); }
+  },
+});
+
+function openViewer(i) {
+  closePopover();
+  viewer.hidden = false;
+  document.body.style.overflow = "hidden";
+  showInViewer(i);
+}
+
+function showInViewer(i) {
+  if (!state.view.length) return closeViewer();
+  vIndex = clamp(i, 0, state.view.length - 1);
+  const b = state.view[vIndex];
+  loadAsset(vImg, b.assetId);
+  vImg.alt = b.title || b.fileName || "";
+  $(".pos", viewer).textContent = `${vIndex + 1} / ${state.view.length}`;
+  $(".name", viewer).textContent = b.title || b.fileName || b.id;
+  $(".prev", viewer).disabled = vIndex === 0;
+  $(".next", viewer).disabled = vIndex === state.view.length - 1;
+  for (const j of [vIndex - 1, vIndex + 1]) if (state.view[j]) new Image().src = `/api/assets/${encodeURIComponent(state.view[j].assetId)}`;
+  viewerEditor.setTargets([b.id]);
+  viewerEditor.focus();
+}
+
+function step(d) {
+  const j = vIndex + d;
+  if (j >= 0 && j < state.view.length) showInViewer(j);
+  else viewerEditor.focus();
+}
+
+function closeViewer() {
+  if (viewer.hidden) return;
+  viewer.hidden = true;
+  vImg.removeAttribute("src");
+  document.body.style.overflow = "";
+  setFocus(vIndex);
+}
+
+$(".prev", viewer).addEventListener("click", () => step(-1));
+$(".next", viewer).addEventListener("click", () => step(1));
+$(".close", viewer).addEventListener("click", closeViewer);
+
+// ---------- Keyboard ----------
+document.addEventListener("keydown", e => {
+  const typing = e.target.matches("input, select, textarea");
+  const mod = e.metaKey || e.ctrlKey;
+
+  if (!viewer.hidden) {
+    if (typing) return; // the tag field handles its own keys
+    if (e.key === "Escape") closeViewer();
+    else if (e.key === "ArrowLeft" || e.key === "ArrowRight") step(e.key === "ArrowLeft" ? -1 : 1);
+    else if (!mod && e.key.length === 1) viewerEditor.focus(); // start typing anywhere
+    return;
+  }
+  if (!pop.hidden) { if (!typing && e.key === "Escape") closePopover(); return; } // field handles its own keys
+  if (typing) {
+    if (e.key === "Escape") { e.target.blur(); setFocus(state.focus); }
+    return;
+  }
+  if (e.altKey) return;
+
+  const n = state.view.length, f = state.focus;
+  const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns(), ArrowDown: columns() }[e.key];
+  if (move != null && n) {
+    e.preventDefault();
+    const to = clamp(f + move, 0, n - 1);
+    if (e.shiftKey) { if (state.anchor == null) state.anchor = f; selectRange(state.anchor, to); }
+    setFocus(to);
+  } else if (mod && e.key.toLowerCase() === "a") {
+    e.preventDefault(); setSelected(state.view.map(b => b.id), true);
+  } else if (mod) {
+    return;
+  } else if (e.key === " " && n) {
+    e.preventDefault();
+    if (e.shiftKey && state.anchor != null) selectRange(state.anchor, f);
+    else { const id = state.view[f].id; setSelected([id], !state.selected.has(id)); state.anchor = f; }
+  } else if ((e.key === "Enter" || e.key === "o") && n) {
+    e.preventDefault(); openViewer(f);
+  } else if (e.key === "t" && n) {
+    e.preventDefault(); const ids = tagTargets(); openPopover(ids, popAnchorFor(ids));
+  } else if (e.key === "Escape") {
+    setSelected([...state.selected], false); state.anchor = null;
+  } else if (e.key === "f") {
+    e.preventDefault(); $("#filter").focus();
+  } else if (e.key === "r") {
+    applyFilter();
+  } else if (e.key === "Home" || e.key === "End") {
+    e.preventDefault(); setFocus(e.key === "Home" ? 0 : n - 1);
+  }
+});
+
+$("#filter").addEventListener("change", e => { state.filter = e.target.value; state.focus = 0; applyFilter(); scrollTo(0, 0); });
+$("#stale").addEventListener("click", applyFilter);
+$("#selectAll").addEventListener("click", () => setSelected(state.view.map(b => b.id), true));
+$("#clearSel").addEventListener("click", () => { setSelected([...state.selected], false); state.anchor = null; });
+$("#tagSel").addEventListener("click", () => { const ids = [...state.selected]; openPopover(ids, popAnchorFor(ids)); });
+
+// ---------- Load ----------
+(async function load() {
+  $("#empty").hidden = false;
+  try {
+    const [{ bookmarks }, { tags }] = await Promise.all([api("/api/bookmarks"), api("/api/tags")]);
+    state.all = bookmarks;
+    for (const b of bookmarks) { state.byId.set(b.id, b); b.tags.forEach(t => state.knownTags.add(t)); }
+    tags.forEach(t => state.knownTags.add(t));
+    renderFilter();
+    applyFilter();
+  } catch (e) {
+    $("#empty").textContent = "Could not load from Karakeep: " + e.message;
+  }
+})();
+</script>
+</body>
+</html>

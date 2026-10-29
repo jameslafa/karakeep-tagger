@@ -1,0 +1,9 @@
+services:
+  karakeep-tagger:
+    build: .
+    container_name: karakeep-tagger
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    # .env holds KARAKEEP_URL, KARAKEEP_API_KEY and optionally TAGGER_PASSWORD
+    env_file: .env
