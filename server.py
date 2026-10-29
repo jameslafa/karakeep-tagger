@@ -5,6 +5,7 @@ Nothing is stored: every request is answered from Karakeep directly.
 """
 
 import base64
+import hashlib
 import hmac
 import json
 import os
@@ -237,9 +238,23 @@ class Handler(BaseHTTPRequestHandler):
     def serve_index(self):
         with open(INDEX, "rb") as f:
             data = f.read()
+        # Allow only the page's own inline scripts, by hash, so injected script can't run.
+        hashes = " ".join(
+            "'sha256-%s'" % base64.b64encode(hashlib.sha256(s).digest()).decode()
+            for s in re.findall(rb"<script>(.*?)</script>", data, re.S)
+        )
+        csp = (
+            f"default-src 'none'; script-src {hashes}; style-src 'unsafe-inline'; "
+            "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+            "frame-ancestors 'none'"
+        )
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Security-Policy", csp)
+        self.send_header("X-Frame-Options", "DENY")  # older browsers without frame-ancestors
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
