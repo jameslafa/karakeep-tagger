@@ -197,6 +197,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         if urllib.parse.urlparse(self.path).path != "/api/tags/bulk":
             return self.send_json(404, {"error": "not found"})
+        # CSRF: a cross-site page can only send a JSON content type after a CORS preflight,
+        # which this server never grants; browsers also mark cross-site requests in Sec-Fetch-Site.
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            return self.send_json(415, {"error": "expected application/json"})
+        if self.headers.get("Sec-Fetch-Site", "same-origin") != "same-origin":
+            return self.send_json(403, {"error": "cross-site request refused"})
 
         def run():
             length = int(self.headers.get("Content-Length") or 0)
