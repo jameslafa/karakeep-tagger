@@ -22,6 +22,11 @@ PORT = int(os.environ.get("PORT", "8080"))
 # Optional HTTP basic auth in front of the app (user name is ignored).
 PASSWORD = os.environ.get("TAGGER_PASSWORD", "")
 WORKERS = int(os.environ.get("TAGGER_CONCURRENCY", "8"))
+# Host names this app is reached by (port ignored), besides local ones. Requests for any
+# other host are refused, which stops DNS rebinding.
+HOSTS = {"localhost", "127.0.0.1", "[::1]"} | {
+    h.strip().lower() for h in os.environ.get("TAGGER_HOSTS", "").split(",") if h.strip()
+}
 TIMEOUT = 30
 
 API = KARAKEEP_URL + "/api/v1"
@@ -139,6 +144,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
+    def known_host(self):
+        host = self.headers.get("Host", "").lower()
+        name = host[: host.find("]") + 1] if host.startswith("[") else host.partition(":")[0]
+        if name in HOSTS:
+            return True
+        self.log_message("refused request for host %r", host)
+        self.send_json(421, {"error": "unknown host; add it to TAGGER_HOSTS"})
+        return False
+
     def authorized(self):
         if not PASSWORD:
             return True
@@ -176,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(502, {"error": f"Cannot reach Karakeep: {e}"})
 
     def do_GET(self):
-        if not self.authorized():
+        if not self.known_host() or not self.authorized():
             return
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
@@ -193,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
-        if not self.authorized():
+        if not self.known_host() or not self.authorized():
             return
         if urllib.parse.urlparse(self.path).path != "/api/tags/bulk":
             return self.send_json(404, {"error": "not found"})

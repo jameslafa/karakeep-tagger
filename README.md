@@ -12,7 +12,7 @@ and add/remove bookmark tags.
 ## Run
 
 ```sh
-cp .env.example .env   # fill in KARAKEEP_URL and KARAKEEP_API_KEY
+cp .env.example .env   # fill in KARAKEEP_URL, KARAKEEP_API_KEY and TAGGER_HOSTS
 docker compose up -d --build
 # → http://localhost:8080
 ```
@@ -21,6 +21,10 @@ Without Docker: `set -a; . ./.env; set +a; python3 server.py` (Python ≥ 3.8).
 
 Anyone who can reach the port can read your images and change their tags, so
 keep it on your LAN or tailnet, or set `TAGGER_PASSWORD`.
+
+The app only answers requests for `localhost`, `127.0.0.1` and the host names in
+`TAGGER_HOSTS` (port ignored); anything else gets a 421. Add every name you open it
+by, such as a Tailscale or LAN name.
 
 ## Keys
 
