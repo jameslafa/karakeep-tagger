@@ -142,6 +142,7 @@ def bulk_tags(body):
 class Handler(BaseHTTPRequestHandler):
     server_version = "karakeep-tagger"
     sys_version = ""  # don't advertise the Python version
+    timeout = 60  # seconds a client may stall; otherwise a silent connection holds a thread forever
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
@@ -223,6 +224,8 @@ class Handler(BaseHTTPRequestHandler):
 
         def run():
             length = int(self.headers.get("Content-Length") or 0)
+            if length < 0:  # read(-1) would wait for the client to close the connection
+                raise ValueError("invalid Content-Length")
             if length > 1_000_000:
                 raise ValueError("request too large")
             try:
