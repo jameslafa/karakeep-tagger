@@ -140,6 +140,7 @@ def bulk_tags(body):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "karakeep-tagger"
+    sys_version = ""  # don't advertise the Python version
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
@@ -252,6 +253,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Cache-Control", "private, max-age=31536000, immutable")
+            # An SVG can carry script; if one is opened directly, keep it inert instead of
+            # letting it run as this site.
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+            self.send_header("X-Content-Type-Options", "nosniff")
             if resp.headers.get("Content-Length"):
                 self.send_header("Content-Length", resp.headers["Content-Length"])
             self.end_headers()
