@@ -39,8 +39,10 @@
   aside li { display: flex; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: 6px; }
   aside li.active { background: var(--accent-2); border-color: var(--accent); }
   aside li .open { flex: 1; min-width: 0; text-align: left; background: none; border-color: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  aside li .del { background: none; border-color: transparent; color: var(--muted); padding: 2px 8px; opacity: 0; }
-  aside li:hover .del, aside li.active .del, aside li .del:focus-visible { opacity: 1; }
+  aside li .dup, aside li .del { background: none; border-color: transparent; color: var(--muted); padding: 2px 6px; opacity: 0; }
+  aside li:hover :is(.dup, .del), aside li.active :is(.dup, .del), aside li :is(.dup, .del):focus-visible { opacity: 1; }
+  @media (hover: none) { aside li :is(.dup, .del) { opacity: 1; } }
+  aside li .dup:hover { color: var(--text); }
   aside li .del:hover { color: var(--danger); }
   #newForm { display: grid; gap: 10px; max-width: 680px; }
   #newForm h2 { font-size: 18px; margin: 0 0 4px; }
@@ -64,7 +66,7 @@
   .section .head .tools button { padding: 3px 8px; }
   .section.unsorted { background: none; border-style: dashed; }
   .section.unsorted h2 { font-size: 13px; margin: 0; }
-  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; min-height: 80px;
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; min-height: 80px;
            margin-top: 10px; padding: 4px; border: 1px dashed transparent; border-radius: var(--radius); }
   .items.empty { display: grid; place-items: center; }
   .items.empty::before { content: "Drag images here"; color: var(--muted); font-size: 13px; }
@@ -73,14 +75,33 @@
   .tile { position: relative; display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
   .tile.cover { border-color: var(--accent); }
   .tile.drag { opacity: .35; }
-  .tile .thumb { height: 220px; background: #0b0c0f; cursor: grab; overflow: hidden; }
+  .tile .thumb { height: 300px; background: #0b0c0f; cursor: grab; overflow: hidden; }
   .tile .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
   .tile .acts { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity .1s; }
   .tile:hover .acts, .tile:focus-within .acts, .tile.cover .acts { opacity: 1; }
   .tile .acts button { padding: 2px 7px; background: rgba(17,19,23,.85); }
   .tile.cover .acts .star { color: var(--accent); border-color: var(--accent); }
+  /* A select is as wide as its longest option; a fixed width keeps it to "Move…" (the list that opens still shows full names) */
+  .tile .acts select { width: 72px; background: rgba(17,19,23,.85); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+  @media (hover: none) { .tile .acts { opacity: 1; } } /* touch screens have no hover */
   .tile textarea { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; font-size: 13px; min-height: 38px; }
 
+  #lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(8,9,11,.97); display: grid; grid-template-columns: 1fr 340px; }
+  #lightbox .stage { position: relative; display: grid; place-items: center; min-height: 0; padding: 16px; }
+  #lightbox .stage img { max-width: 100%; max-height: calc(100vh - 32px); object-fit: contain; }
+  #lightbox .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 28px; padding: 4px 14px; background: rgba(17,19,23,.7); }
+  #lightbox .prev { left: 12px; }
+  #lightbox .next { right: 12px; }
+  #lightbox aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+  #lightbox .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #lightbox .top h2 { font-size: 13px; font-weight: 600; margin: 0; }
+  #lightbox textarea { min-height: 120px; }
+  #lightbox .hints { display: grid; gap: 4px; font-size: 12px; color: var(--muted); margin-top: auto; }
+  @media (max-width: 700px) {
+    #lightbox { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    #lightbox .stage img { max-height: 60vh; }
+    #lightbox aside { border-left: 0; border-top: 1px solid var(--line); }
+  }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 40; background: var(--panel-2);
            border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
   #toast.error { border-color: var(--danger); }
@@ -130,6 +151,22 @@
   </main>
 </div>
 
+<div id="lightbox" hidden role="dialog" aria-label="Image">
+  <div class="stage">
+    <img alt="">
+    <button class="nav prev" title="Previous (←)">‹</button>
+    <button class="nav next" title="Next (→)">›</button>
+  </div>
+  <aside>
+    <div class="top"><h2 class="where"></h2><button class="close" title="Close (Esc)">✕</button></div>
+    <textarea class="note" maxlength="1000" placeholder="Mood: what to take from this image" aria-label="Mood note"></textarea>
+    <div class="hints">
+      <span><kbd>←</kbd><kbd>→</kbd> previous/next (when the note is empty)</span>
+      <span><kbd>PageUp</kbd><kbd>PageDown</kbd> or <kbd>⌘/Ctrl ↑↓</kbd> previous/next</span>
+      <span><kbd>⌘/Ctrl Enter</kbd> next · <kbd>Esc</kbd> close</span>
+    </div>
+  </aside>
+</div>
 <div id="toast" hidden></div>
 
 <script>
@@ -208,11 +245,13 @@ addEventListener("beforeunload", e => { if (dirty() || state.saving) e.preventDe
 // ---------- Board list ----------
 function renderBoards() {
   $("#boards").replaceChildren(...state.boards.map(b => {
-    const li = el("li", b.id === state.board?.id ? "active" : null), open = el("button", "open", b.name), del = el("button", "del", "×");
-    open.title = b.name; del.title = `Delete “${b.name}”`;
+    const li = el("li", b.id === state.board?.id ? "active" : null), open = el("button", "open", b.name);
+    const dup = el("button", "dup", "⧉"), del = el("button", "del", "×");
+    open.title = b.name; dup.title = `Duplicate “${b.name}”`; del.title = `Delete “${b.name}”`;
     open.addEventListener("click", () => openBoard(b.id));
+    dup.addEventListener("click", () => duplicateBoard(b));
     del.addEventListener("click", () => deleteBoard(b));
-    li.append(open, del);
+    li.append(open, dup, del);
     return li;
   }));
 }
@@ -373,15 +412,21 @@ function tile(id) {
   const b = state.board, t = el("figure", "tile"), thumb = el("div", "thumb"), img = el("img"), acts = el("div", "acts");
   t.dataset.id = id;
   t.classList.toggle("cover", b.cover === id);
-  img.src = `/api/assets/${encodeURIComponent(b.images[id].assetId)}?w=600`;
+  img.src = `/api/assets/${encodeURIComponent(b.images[id].assetId)}?w=800`;
   img.alt = b.images[id].title || ""; img.loading = "lazy";
-  thumb.title = "Drag to move";
+  thumb.title = "Click to enlarge, drag to move";
   thumb.append(img);
-  const star = el("button", "star", "★"), x = el("button", null, "×");
-  star.title = "Use as the cover of the PDF"; x.title = "Remove from this board";
+  thumb.addEventListener("click", () => openLightbox(id));
+  const move = el("select"), star = el("button", "star", "★"), x = el("button", null, "×");
+  move.title = "Move to another section"; star.title = "Use as the cover of the PDF"; x.title = "Remove from this board";
+  // Options are filled when it opens, so they show the current section titles
+  fillMoveMenu(move, id);
+  move.addEventListener("pointerdown", () => fillMoveMenu(move, id));
+  move.addEventListener("focus", () => fillMoveMenu(move, id));
+  move.addEventListener("change", () => moveTo(id, move.value));
   star.addEventListener("click", () => setCover(id));
   x.addEventListener("click", () => removeImage(id, t));
-  acts.append(star, x);
+  acts.append(move, star, x);
   const note = el("textarea");
   note.rows = 1; note.maxLength = 1000; note.value = b.notes[id] || "";
   note.placeholder = "Mood: what to take from this image";
@@ -401,6 +446,36 @@ function setCover(id) {
   document.querySelectorAll("#sections .tile").forEach(t => t.classList.toggle("cover", t.dataset.id === b.cover));
   changed();
   toast(b.cover ? "Cover set" : "Cover removed");
+}
+
+// "unsorted" or the id of the section an image is in
+function locate(id) {
+  return state.board.sections.find(s => s.items.includes(id))?.id || "unsorted";
+}
+
+function placeName(key) {
+  const i = state.board.sections.findIndex(s => s.id === key);
+  return i < 0 ? "Unsorted" : state.board.sections[i].title.trim() || `Section ${i + 1}`;
+}
+
+function fillMoveMenu(sel, id) {
+  const here = locate(id), option = (v, label, disabled = false) => {
+    const o = el("option", null, label); o.value = v; o.disabled = disabled; return o;
+  };
+  sel.replaceChildren(option("", "Move…"),
+    ...["unsorted", ...state.board.sections.map(s => s.id)].map(k => option(k, placeName(k), k === here)));
+  sel.value = "";
+}
+
+// Moves an image to the end of a section (or of Unsorted)
+function moveTo(id, key) {
+  if (!key) return;
+  const b = state.board;
+  b.unsorted = b.unsorted.filter(x => x !== id);
+  for (const s of b.sections) s.items = s.items.filter(x => x !== id);
+  (key === "unsorted" ? b.unsorted : b.sections.find(s => s.id === key).items).push(id);
+  changed(); renderSections();
+  toast(`Moved to “${placeName(key)}”`);
 }
 
 async function removeImage(id, t) {
@@ -458,6 +533,83 @@ function onDragEnd(e, t) {
   b.unsorted = unsorted;
   b.sections.forEach((s, i) => { s.items = sections[i]; });
   if (JSON.stringify([b.unsorted, sections]) !== before) changed();
+}
+
+// ---------- Full-size view ----------
+// Steps through the board in page order (Unsorted, then each section) with the note
+// editable on the side, like the tagger's viewer.
+const lightbox = $("#lightbox"), lbNote = $(".note", lightbox);
+let lbOrder = [], lbIndex = 0;
+
+function openLightbox(id) {
+  const b = state.board;
+  lbOrder = [...b.unsorted, ...b.sections.flatMap(s => s.items)];
+  lbIndex = Math.max(0, lbOrder.indexOf(id));
+  lightbox.hidden = false;
+  showLightbox();
+}
+
+function closeLightbox() {
+  lightbox.hidden = true;
+  lbNote.blur();
+}
+
+function showLightbox() {
+  const b = state.board, id = lbOrder[lbIndex], src = i => `/api/assets/${encodeURIComponent(b.images[i].assetId)}?w=2400`;
+  $("img", lightbox).src = src(id);
+  $(".where", lightbox).textContent = `${placeName(locate(id))} · ${lbIndex + 1} of ${lbOrder.length}`;
+  lbNote.value = b.notes[id] || "";
+  autogrow(lbNote);
+  $(".prev", lightbox).disabled = lbIndex === 0;
+  $(".next", lightbox).disabled = lbIndex === lbOrder.length - 1;
+  for (const j of [lbIndex - 1, lbIndex + 1]) if (lbOrder[j]) new Image().src = src(lbOrder[j]);
+  if (matchMedia("(hover: hover)").matches) lbNote.focus(); // on touch screens it would pop up the keyboard
+}
+
+function stepLightbox(d) {
+  const i = lbIndex + d;
+  if (i >= 0 && i < lbOrder.length) { lbIndex = i; showLightbox(); }
+}
+
+// The note edits the same text as the box under the tile on the page.
+lbNote.addEventListener("input", () => {
+  const id = lbOrder[lbIndex], tileNote = $(`#sections .tile[data-id="${id}"] textarea`);
+  state.board.notes[id] = lbNote.value;
+  if (tileNote) { tileNote.value = lbNote.value; autogrow(tileNote); }
+  changed();
+});
+
+$(".prev", lightbox).addEventListener("click", () => stepLightbox(-1));
+$(".next", lightbox).addEventListener("click", () => stepLightbox(1));
+$(".close", lightbox).addEventListener("click", closeLightbox);
+$(".stage", lightbox).addEventListener("click", e => { if (e.target === e.currentTarget) closeLightbox(); });
+document.addEventListener("keydown", e => {
+  if (lightbox.hidden) return;
+  const mod = e.metaKey || e.ctrlKey, empty = !lbNote.value || document.activeElement !== lbNote;
+  if (e.key === "Escape") { e.preventDefault(); closeLightbox(); }
+  else if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); stepLightbox(e.key === "PageUp" ? -1 : 1); }
+  else if (mod && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); stepLightbox(e.key === "ArrowUp" ? -1 : 1); }
+  else if (mod && e.key === "Enter") { e.preventDefault(); stepLightbox(1); }
+  else if (empty && (e.key === "ArrowLeft" || e.key === "ArrowRight")) { e.preventDefault(); stepLightbox(e.key === "ArrowLeft" ? -1 : 1); }
+});
+
+// ---------- Duplicate ----------
+// A new board with the same description, sections, images, notes, cover and columns.
+async function duplicateBoard(b) {
+  if (state.board?.id === b.id) {
+    await save();
+    if (dirty()) toast("Latest changes aren't saved; the copy has the board as last saved", true);
+  }
+  const name = prompt(`Duplicate “${b.name}” as:`, `${b.name} (copy)`.slice(0, 40));
+  if (!name?.trim()) return;
+  try {
+    const copy = await post(`/api/boards/${encodeURIComponent(b.id)}/duplicate`, { name: name.trim().slice(0, 40) });
+    await loadBoards();
+    await openBoard(copy.id);
+    toast(`Made “${copy.name}”`);
+  } catch (e) {
+    toast(`Couldn't duplicate the board: ${e.message}`, true);
+  }
 }
 
 // ---------- PDF ----------

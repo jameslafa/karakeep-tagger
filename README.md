@@ -120,8 +120,12 @@ board. Open **Moodboards** in the header of the tagger to manage them.
 2. Back in the tagger, choose the board in the header drop-down, select images and press
    `B` to add them (`Shift+B` removes them). The list pop-over works too.
 3. On the board page, add sections with a title and a description, drag images into them
-   and into order, and write a mood note under each image. ★ makes an image the cover.
-   Changes save automatically.
+   and into order (or use an image's *Move…* menu, handy on a tablet), and write a
+   mood note under each image. ★ makes an image the cover. Click an image to see it full
+   size with its note beside it to edit; ← → (when the note is empty), PageUp/PageDown or
+   ⌘/Ctrl+↑↓ step through the board, ⌘/Ctrl+Enter goes to the next image. Changes save
+   automatically. The ⧉ next to a board in the sidebar duplicates it, with the same
+   sections, images and notes.
 4. **Download PDF** builds a PDF on the server and downloads it, in colour and without a
    print dialog. It is made for screens: pages are A4 wide and as tall as their content, so
    it scrolls like a web page. The first page has the title, description and cover; then
@@ -229,7 +233,8 @@ Tag field (pop-over and viewer)
 - `-name` removes a tag. Chips: × removes; clicking a dashed (partial) chip adds
   it to all selected images.
 - Viewer: ←/→ (when the field is empty) or PageUp/PageDown go to the previous/next
-  image. Enter on an empty field goes to the next one. `L` focuses the list picker. Esc closes.
+  image. Enter on an empty field goes to the next one. `L` focuses the list picker.
+  `Alt+B` adds the image to the active moodboard, `Shift+Alt+B` removes it. Esc closes.
 
 Lists
 - The list pop-over and the viewer show the lists the image is in as green chips; × removes it.

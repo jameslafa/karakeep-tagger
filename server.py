@@ -244,9 +244,10 @@ class Handler(BaseHTTPRequestHandler):
             return bulk_lists
         if path == "/api/boards":
             return moodboards.create_board
-        m = re.match(r"^/api/boards/([A-Za-z0-9_-]{1,64})(/delete)?$", path)
+        m = re.match(r"^/api/boards/([A-Za-z0-9_-]{1,64})(/delete|/duplicate)?$", path)
         if m:
-            fn = moodboards.delete_board if m.group(2) else moodboards.save_board
+            fn = {None: moodboards.save_board, "/delete": moodboards.delete_board,
+                  "/duplicate": moodboards.duplicate_board}[m.group(2)]
             return lambda body: fn(m.group(1), body)
         return None
 

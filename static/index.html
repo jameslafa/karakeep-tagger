@@ -150,6 +150,7 @@
     <div class="hints">
       <span><kbd>Enter</kbd> add tag · <kbd>Tab</kbd> complete · <kbd>↑↓</kbd> choose</span>
       <span><kbd>-name</kbd> remove a tag · <kbd>L</kbd> lists</span>
+      <span><kbd>Alt B</kbd> add to the active board · <kbd>Shift Alt B</kbd> remove</span>
       <span><kbd>←</kbd><kbd>→</kbd> prev/next (when the field is empty)</span>
       <span><kbd>Enter</kbd> on empty field → next · <kbd>Esc</kbd> close</span>
     </div>
@@ -734,6 +735,8 @@ document.addEventListener("keydown", e => {
   const mod = e.metaKey || e.ctrlKey;
 
   if (!viewer.hidden) {
+    // Alt+B works while typing in the tag field (e.code, since Alt changes e.key on a Mac)
+    if (e.altKey && e.code === "KeyB") { e.preventDefault(); return toBoard([state.view[vIndex].id], e.shiftKey); }
     if (typing && e.target.tagName === "SELECT" && e.key === "Escape") { e.preventDefault(); return viewerEditor.focus(); }
     if (typing) return; // the tag field handles its own keys
     if (e.key === "Escape") closeViewer();

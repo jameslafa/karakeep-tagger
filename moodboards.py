@@ -10,6 +10,7 @@ import json
 import os
 import threading
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 import moodboard_pdf
 from karakeep import DATA_DIR, ID_RE, KarakeepError, clean_ids, is_image, kk, paginate
@@ -165,6 +166,18 @@ def save_board(board_id, body):
         with boards_lock:
             save_layout(board_id, layout)
     return {"ok": True}
+
+
+def duplicate_board(board_id, body):
+    """A new board with the same description, images, sections, notes, cover and columns."""
+    name = clean_text(body.get("name"), "name", 40, required=True)
+    src = get_board(board_id)
+    new = create_board({"name": name, "description": src["description"]})
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda bid: kk("PUT", f"/lists/{new['id']}/bookmarks/{bid}"), src["images"]))
+    with boards_lock:
+        save_layout(new["id"], {k: src[k] for k in ("sections", "unsorted", "notes", "cover", "columns")})
+    return new
 
 
 def delete_board(board_id, body=None):
