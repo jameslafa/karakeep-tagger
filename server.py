@@ -17,8 +17,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import inbox
+
 KARAKEEP_URL = os.environ.get("KARAKEEP_URL", "").rstrip("/")
 API_KEY = os.environ.get("KARAKEEP_API_KEY", "")
+# Optional separate key for the inbox importer (defaults to KARAKEEP_API_KEY)
+INBOX_API_KEY = os.environ.get("KARAKEEP_INBOX_API_KEY") or API_KEY
 PORT = int(os.environ.get("PORT", "8080"))
 # Optional HTTP basic auth in front of the app (user name is ignored).
 PASSWORD = os.environ.get("TAGGER_PASSWORD", "")
@@ -41,11 +45,11 @@ class KarakeepError(Exception):
         self.status = status
 
 
-def kk(method, path, body=None, raw=False):
+def kk(method, path, body=None, raw=False, key=None):
     """Call the Karakeep API. Returns parsed JSON, or the raw response if raw=True."""
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(API + path, data=data, method=method)
-    req.add_header("Authorization", "Bearer " + API_KEY)
+    req.add_header("Authorization", "Bearer " + (key or API_KEY))
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
@@ -204,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_errors(lambda: self.send_json(200, {"bookmarks": list_images()}))
         if path == "/api/tags":
             return self.handle_errors(lambda: self.send_json(200, {"tags": list_tags()}))
+        if path == "/api/inbox/status":
+            return self.send_json(200, INBOX.snapshot() if INBOX else {"enabled": False})
         m = re.match(r"^/api/assets/([A-Za-z0-9-]{1,64})$", path)
         if m:
             return self.handle_errors(lambda: self.proxy_asset(m.group(1)))
@@ -285,9 +291,14 @@ class Handler(BaseHTTPRequestHandler):
                 pass  # browser scrolled away / cancelled
 
 
+INBOX = None
+
+
 def main():
+    global INBOX
     if not KARAKEEP_URL or not API_KEY:
         sys.exit("KARAKEEP_URL and KARAKEEP_API_KEY must be set")
+    INBOX = inbox.start(KARAKEEP_URL, INBOX_API_KEY, kk)
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     httpd.daemon_threads = True
     print(f"karakeep-tagger on :{PORT} -> {KARAKEEP_URL}", flush=True)

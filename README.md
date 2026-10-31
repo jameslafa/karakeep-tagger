@@ -4,9 +4,12 @@ A fast, keyboard-driven way to tag the image bookmarks in a self-hosted
 [Karakeep](https://karakeep.app) instance. Select one image or hundreds in a grid,
 type a tag with autocomplete, and move on.
 
-It's one Python file using only the standard library, plus one static HTML page.
-Karakeep stays the source of truth: the tagger stores nothing and every change goes
-straight to Karakeep's API.
+It's two small Python files using only the standard library, plus one static HTML page.
+Karakeep stays the source of truth: the tagger stores nothing about your bookmarks and
+every change goes straight to Karakeep's API.
+
+Optionally, it can also watch folders in a [Seafile](https://www.seafile.com) library and
+import every image you drop there into Karakeep, see [Inbox import](#inbox-import).
 
 > This is an unofficial companion app, not part of the Karakeep project.
 > Tested with Karakeep 0.34.1.
@@ -18,6 +21,8 @@ straight to Karakeep's API.
 - Tag pop-over with autocomplete; add or remove a tag on all selected images at once
 - Full-size viewer for tagging one image after another without touching the mouse
 - Partial tags (on some of the selected images) shown as dashed chips; click to apply to all
+- Optional inbox: drop images into a Seafile library from any device, they become Karakeep
+  image bookmarks in the list of your choice
 
 ## Quick start
 
@@ -49,6 +54,8 @@ All settings go in `.env`:
 | `TAGGER_CONCURRENCY` | no | Parallel Karakeep requests for bulk tagging. Default `8` |
 
 After changing `.env`, apply it with `docker compose up -d`.
+
+Inbox import settings are listed in [Inbox import](#inbox-import).
 
 ## Remote access
 
@@ -96,6 +103,64 @@ What it does to stay safe:
 To report a vulnerability, please open a private security advisory on GitHub rather
 than a public issue.
 
+## Inbox import
+
+A Seafile library can act as an inbox for Karakeep. Add images to it from the Seafile
+desktop client, the mobile app or the web, and the tagger imports them:
+
+1. Every `INBOX_POLL_SECONDS` (default 60) it lists the folders in `INBOX_FOLDERS`.
+   Hidden files, files in the library root and other folders are ignored.
+2. A file is picked up once its size and modification time are unchanged across two polls.
+3. It is downloaded, uploaded to Karakeep as an image bookmark dated with the file's
+   modification time, and added to the Karakeep list mapped to its folder. Karakeep's own
+   AI tagging runs as usual.
+4. Only after Karakeep confirms the bookmark and the stored size, the file is deleted from
+   Seafile. Deleted files go to the library's recycle bin.
+
+If any step fails, nothing is deleted and the file is retried on later polls with backoff
+(doubling from one poll interval up to an hour). Failures are logged and shown as a red
+banner at the top of the tagger page; `GET /api/inbox/status` returns the same information
+as JSON. Files of other types are left alone and logged once.
+
+Accepted: JPEG, PNG, WebP, GIF, HEIC/HEIF. Karakeep cannot store HEIC, so HEIC photos
+from an iPhone are converted to JPEG (quality 92, EXIF kept) before upload; the original
+HEIC only survives in the recycle bin. This conversion needs the `pillow` and
+`pillow-heif` packages, which the Docker image installs.
+
+Every imported file's SHA-256 and bookmark id are recorded in a state file on the
+`inbox-state` volume. Dropping the same image twice, or a restart between import and
+deletion, therefore never creates a second bookmark: the file is matched to the existing
+bookmark (re-imported if you deleted that bookmark in Karakeep) and removed from the inbox.
+
+### Setup
+
+1. In Seafile, open the library, choose *API Token* from its menu, and create a token with
+   read-write permission. It can only access this one library.
+2. Create the folders in the library and the matching lists in Karakeep.
+3. Add to `.env`:
+
+| Setting | Required | Description |
+|---|---|---|
+| `SEAFILE_URL` | yes | Seafile base URL as reached from the container, e.g. `http://host.docker.internal:8000` when Seafile runs in Docker on the same machine |
+| `SEAFILE_TOKEN` | yes | Library-scoped API token |
+| `INBOX_FOLDERS` | yes | `folder=List name` pairs, comma-separated, e.g. `photography=Photography,ropes=Ropes` |
+| `INBOX_TAG` | no | Tag to add to every import. None by default |
+| `INBOX_POLL_SECONDS` | no | Default `60` |
+| `INBOX_DRY_RUN` | no | `true` logs what would be imported and deleted without changing anything |
+| `KARAKEEP_INBOX_API_KEY` | no | Separate Karakeep API key for the importer, for easier revocation. Default: `KARAKEEP_API_KEY` |
+
+Start with `INBOX_DRY_RUN=true`, check `docker compose logs -f`, then set it to `false`.
+The inbox is off unless `SEAFILE_URL`, `SEAFILE_TOKEN` and `INBOX_FOLDERS` are all set.
+
+### Recovering a file from the recycle bin
+
+In Seafile's web interface open the library, click the *Trash* icon at the top of the file
+list, find the file and choose *Restore*. How long deleted files stay there is the
+library's *History Setting* (library menu → History Setting); with a limit of 30 days
+anything older is removed by Seafile's garbage collection. Restored files are imported
+again on the next poll unless the bookmark still exists, in which case they are only
+removed from the inbox again. To keep a restored file, move it out of the inbox folders.
+
 ## Running without Docker
 
 ```sh
@@ -103,8 +168,10 @@ set -a; . ./.env; set +a
 python3 server.py
 ```
 
-Python 3.8 or newer, no dependencies. The port is `PORT` (default `8080`). Note that the
-server listens on all network interfaces; `TAGGER_PUBLISH` only applies to Docker.
+Python 3.8 or newer, no dependencies for tagging. The port is `PORT` (default `8080`).
+Note that the server listens on all network interfaces; `TAGGER_PUBLISH` only applies to
+Docker. For the inbox, set `INBOX_STATE_DIR` to a writable directory (default `/data`),
+and `pip install pillow pillow-heif` if you want HEIC files converted.
 
 ## Keyboard shortcuts
 

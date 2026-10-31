@@ -8,3 +8,9 @@ services:
       - "${TAGGER_PUBLISH:-127.0.0.1:8080}:8080"
     # Settings (KARAKEEP_URL, KARAKEEP_API_KEY, TAGGER_HOSTS, ...): see .env.example
     env_file: .env
+    volumes:
+      # Inbox import state (which files became which bookmarks); only used with SEAFILE_*
+      - inbox-state:/data
+
+volumes:
+  inbox-state:

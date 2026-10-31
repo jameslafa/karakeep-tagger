@@ -29,6 +29,8 @@
   header select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; max-width: 260px; }
   header .spacer { flex: 1; }
   #stale { border-color: #b8860b; }
+  #inbox { padding: 8px 16px; background: #3a2323; border-bottom: 1px solid var(--danger); font-size: 13px; }
+  #inbox ul { margin: 4px 0 0; padding-left: 18px; }
 
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; padding: 16px; user-select: none; }
   .card { position: relative; background: var(--panel); border: 2px solid transparent; border-radius: var(--radius); overflow: hidden; cursor: pointer; outline: none; }
@@ -102,6 +104,7 @@
   <button id="clearSel" title="Clear selection (Esc)" disabled>Clear</button>
   <button id="tagSel" class="primary" title="Tag selected (T)" disabled>Tag selected…</button>
 </header>
+<div id="inbox" role="alert" hidden></div>
 
 <main id="grid" aria-label="Images"></main>
 <div id="empty" class="muted" hidden>Loading…</div>
@@ -645,6 +648,28 @@ $("#stale").addEventListener("click", applyFilter);
 $("#selectAll").addEventListener("click", () => setSelected(state.view.map(b => b.id), true));
 $("#clearSel").addEventListener("click", () => { setSelected([...state.selected], false); state.anchor = null; });
 $("#tagSel").addEventListener("click", () => { const ids = [...state.selected]; openPopover(ids, popAnchorFor(ids)); });
+
+// ---------- Inbox import status ----------
+// Shown only when something is wrong, so a quiet import stays invisible.
+async function inboxStatus() {
+  const box = $("#inbox");
+  try {
+    const s = await api("/api/inbox/status");
+    const failed = s.failed || [];
+    if (!s.enabled || (!failed.length && !s.lastError)) { box.hidden = true; return; }
+    box.replaceChildren();
+    if (s.lastError) box.append(el("div", null, "Inbox poll failed: " + s.lastError));
+    if (failed.length) {
+      box.append(el("div", null, `Inbox: ${failed.length} file${failed.length > 1 ? "s" : ""} could not be imported`));
+      const ul = el("ul");
+      for (const f of failed) ul.append(el("li", null, `${f.path} (attempt ${f.attempts}): ${f.error}`));
+      box.append(ul);
+    }
+    box.hidden = false;
+  } catch { box.hidden = true; }
+}
+inboxStatus();
+setInterval(inboxStatus, 60000);
 
 // ---------- Load ----------
 (async function load() {
