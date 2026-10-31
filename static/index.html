@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Karakeep Tagger</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111317'/%3E%3Cpath d='M6 7.5A1.5 1.5 0 0 1 7.5 6H15l11 11-9 9L6 15z' fill='%235b9dff'/%3E%3Ccircle cx='11' cy='11' r='2.2' fill='%23111317'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111317'/%3E%3Crect x='6' y='6' width='9' height='12' rx='1.5' fill='%235b9dff'/%3E%3Crect x='17' y='6' width='9' height='7' rx='1.5' fill='%235b9dff'/%3E%3Crect x='17' y='15' width='9' height='11' rx='1.5' fill='%235b9dff'/%3E%3Crect x='6' y='20' width='9' height='6' rx='1.5' fill='%235b9dff'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #111317; --panel: #1a1d23; --panel-2: #23272f; --line: #2f343d;
@@ -28,6 +28,8 @@
   header h1 { font-size: 15px; margin: 0 8px 0 0; }
   header select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; max-width: 260px; }
   header .spacer { flex: 1; }
+  header a.button { color: inherit; text-decoration: none; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+  header a.button:hover { border-color: var(--accent); }
   #stale { border-color: #b8860b; }
   #inbox { padding: 8px 16px; background: #3a2323; border-bottom: 1px solid var(--danger); font-size: 13px; }
   #inbox ul { margin: 4px 0 0; padding-left: 18px; }
@@ -112,6 +114,8 @@
   <span id="count" class="muted"></span>
   <button id="stale" hidden title="Re-apply filter (R)"></button>
   <span class="spacer"></span>
+  <select id="board" title="Active moodboard: B adds the selection, Shift+B removes it"></select>
+  <a class="button" id="boardsLink" href="/boards" title="Edit moodboards and export them as PDF">Moodboards</a>
   <span id="selcount" class="muted"></span>
   <button id="selectAll" title="Select all (⌘/Ctrl+A)">Select all</button>
   <button id="clearSel" title="Clear selection (Esc)" disabled>Clear</button>
@@ -126,7 +130,7 @@
 <footer>
   <span><kbd>Click</kbd> select</span><span><kbd>Shift</kbd>+click range</span><span><kbd>⌘/Ctrl A</kbd> all</span>
   <span><kbd>←↑→↓</kbd> move (<kbd>Shift</kbd> extends)</span><span><kbd>Space</kbd> toggle</span>
-  <span><kbd>T</kbd> tag</span><span><kbd>L</kbd> list</span><span><kbd>Enter</kbd>/double-click open</span><span><kbd>F</kbd> filter</span>
+  <span><kbd>T</kbd> tag</span><span><kbd>L</kbd> list</span><span><kbd>B</kbd>/<kbd>Shift B</kbd> add to/remove from board</span><span><kbd>Enter</kbd>/double-click open</span><span><kbd>F</kbd> filter</span>
   <span><kbd>R</kbd> re-apply filter</span><span><kbd>Esc</kbd> clear</span>
 </footer>
 
@@ -169,6 +173,8 @@ const state = {
   view: [],             // bookmarks currently shown (snapshot taken when the filter is applied)
   filter: "all",        // tag filter: "all" | "untagged" | "tag:<name>"
   listFilter: "all",    // list filter: "all" | "nolist" | "list:<id>"; combined with the tag filter
+  boards: [],           // moodboards {id, name}: the sublists of the Moodboards list
+  board: "",            // active moodboard id, for B / Shift+B
   selected: new Set(),
   anchor: null,         // index in view for shift ranges
   focus: 0,
@@ -263,6 +269,27 @@ function renderFilter() {
   $("#listFilter").replaceChildren(...listOpts);
   $("#listFilter").hidden = !state.lists.length;
   $("#listFilter").value = state.listFilter;
+}
+
+function renderBoards() {
+  const sel = $("#board");
+  if (!state.boards.some(b => b.id === state.board)) state.board = "";
+  const option = (v, label) => { const o = el("option", null, label); o.value = v; return o; };
+  sel.replaceChildren(option("", state.boards.length ? "No active board" : "No moodboards yet"),
+    ...state.boards.map(b => option(b.id, `Board: ${b.name}`)));
+  sel.disabled = !state.boards.length;
+  sel.value = state.board;
+  $("#boardsLink").href = "/boards" + (state.board ? "#" + state.board : "");
+}
+
+// B adds the targets to the active board, Shift+B takes them out.
+function toBoard(ids, remove) {
+  const board = state.boards.find(b => b.id === state.board);
+  if (!board) { toast("Pick a moodboard first", true); return $("#board").focus(); }
+  const todo = ids.filter(id => state.byId.get(id).lists.includes(board.id) === remove);
+  if (!todo.length) return toast(remove ? `Not in “${board.name}”` : `Already in “${board.name}”`);
+  mutate(todo, remove ? [] : [board.id], remove ? [board.id] : [], "lists");
+  toast(`${remove ? "Removed" : "Added"} ${todo.length} ${remove ? "from" : "to"} “${board.name}”`);
 }
 
 function applyFilter() {
@@ -744,6 +771,8 @@ document.addEventListener("keydown", e => {
     e.preventDefault(); openViewer(f);
   } else if ((e.key === "t" || e.key === "l") && n) {
     e.preventDefault(); const ids = tagTargets(); openPopover(ids, popAnchorFor(ids), e.key === "l");
+  } else if ((e.key === "b" || e.key === "B") && n) {
+    e.preventDefault(); toBoard(tagTargets(), e.key === "B");
   } else if (e.key === "Escape") {
     setSelected([...state.selected], false); state.anchor = null;
   } else if (e.key === "f") {
@@ -757,6 +786,12 @@ document.addEventListener("keydown", e => {
 
 $("#filter").addEventListener("change", e => { state.filter = e.target.value; state.focus = 0; applyFilter(); scrollTo(0, 0); });
 $("#listFilter").addEventListener("change", e => { state.listFilter = e.target.value; state.focus = 0; renderFilter(); applyFilter(); scrollTo(0, 0); });
+$("#board").addEventListener("change", e => {
+  state.board = e.target.value;
+  $("#boardsLink").href = "/boards" + (state.board ? "#" + state.board : "");
+  try { localStorage.setItem("activeBoard", state.board); } catch {}
+  e.target.blur(); setFocus(state.focus, false);
+});
 $("#stale").addEventListener("click", applyFilter);
 $("#selectAll").addEventListener("click", () => setSelected(state.view.map(b => b.id), true));
 $("#clearSel").addEventListener("click", () => { setSelected([...state.selected], false); state.anchor = null; });
@@ -789,7 +824,8 @@ setInterval(inboxStatus, 60000);
 (async function load() {
   $("#empty").hidden = false;
   try {
-    const [{ bookmarks }, { tags }, { lists }] = await Promise.all([api("/api/bookmarks"), api("/api/tags"), api("/api/lists")]);
+    const [{ bookmarks }, { tags }, { lists }, { boards }] = await Promise.all(
+      [api("/api/bookmarks"), api("/api/tags"), api("/api/lists"), api("/api/boards")]);
     state.all = bookmarks;
     for (const b of bookmarks) { state.byId.set(b.id, b); b.lists = []; b.tags.forEach(t => state.knownTags.add(t)); }
     tags.forEach(t => state.knownTags.add(t));
@@ -798,6 +834,9 @@ setInterval(inboxStatus, 60000);
     const path = l => (l.parentId && byId.has(l.parentId) ? path(byId.get(l.parentId)) + " / " : "") + l.name;
     state.lists = lists.map(l => ({ id: l.id, name: l.name, path: path(l), type: l.type })).sort((a, b) => cmp(a.path, b.path));
     for (const l of lists) for (const id of l.bookmarkIds) state.byId.get(id)?.lists.push(l.id);
+    state.boards = boards;
+    try { state.board = localStorage.getItem("activeBoard") || ""; } catch {}
+    renderBoards();
     renderFilter();
     applyFilter();
   } catch (e) {

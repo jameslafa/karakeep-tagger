@@ -4,9 +4,10 @@ A fast, keyboard-driven way to tag the image bookmarks in a self-hosted
 [Karakeep](https://karakeep.app) instance. Select one image or hundreds in a grid,
 type a tag with autocomplete, and move on.
 
-It's two small Python files using only the standard library, plus one static HTML page.
-Karakeep stays the source of truth: the tagger stores nothing about your bookmarks and
-every change goes straight to Karakeep's API.
+It's a small Python server using only the standard library for tagging, plus two static
+HTML pages. Moodboard PDFs and the inbox's HEIC conversion use a few optional packages.
+Karakeep stays the source of truth: every change goes straight to Karakeep's API. The only
+thing the tagger stores itself is the layout of your moodboards.
 
 Optionally, it can also watch folders in a [Seafile](https://www.seafile.com) library and
 import every image you drop there into Karakeep, see [Inbox import](#inbox-import).
@@ -22,6 +23,8 @@ import every image you drop there into Karakeep, see [Inbox import](#inbox-impor
 - Put the selected images into a Karakeep list, or take them out, in a separate list pop-over
 - Full-size viewer for tagging one image after another without touching the mouse
 - Partial tags (on some of the selected images) shown as dashed chips; click to apply to all
+- Moodboards: collect images for a shoot into sections with a description, write a mood
+  note under each image, and export the board as a PDF to send, see [Moodboards](#moodboards)
 - Optional inbox: drop images into a Seafile library from any device, they become Karakeep
   image bookmarks in the list of your choice
 
@@ -53,6 +56,7 @@ All settings go in `.env`:
 | `TAGGER_PASSWORD` | no | Require this password (HTTP basic auth, any user name) |
 | `TAGGER_PUBLISH` | no | Host address and port Docker publishes on. Default `127.0.0.1:8080` |
 | `TAGGER_CONCURRENCY` | no | Parallel Karakeep requests for bulk tagging. Default `8` |
+| `TAGGER_BOARDS_LIST` | no | Name of the top-level Karakeep list that holds the moodboards. Default `Moodboards` |
 
 After changing `.env`, apply it with `docker compose up -d`.
 
@@ -94,16 +98,45 @@ What it does to stay safe:
 
 - The Karakeep API key stays on the server. The browser only talks to the tagger, which
   forwards a fixed set of calls: list bookmarks, tags and lists, fetch images, add or
-  remove tags, add to or remove from lists.
+  remove tags, add to or remove from lists. It only creates, renames or deletes lists
+  under the moodboards list.
 - Requests for host names not in `TAGGER_HOSTS` are refused (status 421), which blocks
   DNS rebinding attacks.
-- Tag changes must be same-origin JSON requests, so other websites can't make your
-  browser change tags.
+- Changes must be same-origin JSON requests, so other websites can't make your
+  browser change tags, lists or moodboards.
 - The page has a strict Content Security Policy and can't be framed; images are served
   with a sandbox policy, so an SVG with a script can't run.
 
 To report a vulnerability, please open a private security advisory on GitHub rather
 than a public issue.
+
+## Moodboards
+
+A moodboard is a sublist of a Karakeep list called `Moodboards`, created with your first
+board. Open **Moodboards** in the header of the tagger to manage them.
+
+1. Click *New board* and give it a title and a description (the idea, date, place,
+   wardrobe…). The × next to a board's name in the sidebar deletes it.
+2. Back in the tagger, choose the board in the header drop-down, select images and press
+   `B` to add them (`Shift+B` removes them). The list pop-over works too.
+3. On the board page, add sections with a title and a description, drag images into them
+   and into order, and write a mood note under each image. ★ makes an image the cover.
+   Changes save automatically.
+4. **Download PDF** builds a PDF on the server and downloads it, in colour and without a
+   print dialog. It is made for screens: pages are A4 wide and as tall as their content, so
+   it scrolls like a web page. The first page has the title, description and cover; then
+   each section is one page with its images in a masonry grid (each image goes into the
+   shortest column) and their notes underneath. *PDF columns* sets the number of columns,
+   1 to 4 (default 2). A very long section continues on a second page, since PDF viewers
+   don't open pages taller than about 5 m. Images are resized to 1600 px so the file stays
+   small enough to send by chat or email.
+
+New images land in *Unsorted*. Once a board has sections, *Unsorted* is a staging area
+and is left out of the PDF; a board without sections prints everything in it.
+
+The board's title, description and images live in Karakeep. Sections, order, notes, the
+cover and the column count are kept in a JSON file per board in the `/data` volume (`moodboards/<list id>.json`).
+Deleting a board deletes its Karakeep list and that file, never the images.
 
 ## Inbox import
 
@@ -172,8 +205,10 @@ python3 server.py
 
 Python 3.8 or newer, no dependencies for tagging. The port is `PORT` (default `8080`).
 Note that the server listens on all network interfaces; `TAGGER_PUBLISH` only applies to
-Docker. For the inbox, set `INBOX_STATE_DIR` to a writable directory (default `/data`),
-and `pip install pillow pillow-heif` if you want HEIC files converted.
+Docker. For moodboards and the inbox, set `TAGGER_DATA_DIR` to a writable directory
+(default `/data`). `pip install pillow reportlab` for moodboard PDFs and resized images
+on board pages; add `pillow-heif` if you want HEIC files converted. The Docker image also
+installs the DejaVu fonts so PDFs can show most characters (otherwise Helvetica, Latin only).
 
 ## Keyboard shortcuts
 
@@ -185,6 +220,7 @@ Grid
 - Enter, `O` or double-click: open viewer.
 - `F`: focus the tag filter. `R`: re-apply the filter (images you just tagged
   stay visible and dimmed until you do).
+- `B`: add the selection (or the focused image) to the active moodboard. `Shift+B`: remove it.
 
 Tag field (pop-over and viewer)
 - Type to autocomplete from existing tags. ↑↓ choose, Tab completes, Enter adds.

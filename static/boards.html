@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moodboards</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111317'/%3E%3Crect x='6' y='6' width='9' height='12' rx='1.5' fill='%235b9dff'/%3E%3Crect x='17' y='6' width='9' height='7' rx='1.5' fill='%235b9dff'/%3E%3Crect x='17' y='15' width='9' height='11' rx='1.5' fill='%235b9dff'/%3E%3Crect x='6' y='20' width='9' height='6' rx='1.5' fill='%235b9dff'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #111317; --panel: #1a1d23; --panel-2: #23272f; --line: #2f343d;
+    --text: #e6e8eb; --muted: #8b929c; --accent: #5b9dff; --accent-2: #2a4a7a;
+    --danger: #ff6b6b; --radius: 8px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent-2); border-color: var(--accent); }
+  input, textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; outline: none; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: none; overflow: hidden; display: block; }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; }
+
+  header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+           padding: 10px 16px; background: rgba(17,19,23,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header a { color: var(--muted); text-decoration: none; }
+  header a:hover { color: var(--text); }
+  header .spacer { flex: 1; }
+  #status.error { color: var(--danger); }
+
+  .layout { display: grid; grid-template-columns: 240px 1fr; min-height: calc(100vh - 50px); }
+  aside { border-right: 1px solid var(--line); padding: 12px; }
+  aside ul { list-style: none; margin: 0 0 12px; padding: 0; }
+  aside li { display: flex; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: 6px; }
+  aside li.active { background: var(--accent-2); border-color: var(--accent); }
+  aside li .open { flex: 1; min-width: 0; text-align: left; background: none; border-color: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  aside li .del { background: none; border-color: transparent; color: var(--muted); padding: 2px 8px; opacity: 0; }
+  aside li:hover .del, aside li.active .del, aside li .del:focus-visible { opacity: 1; }
+  aside li .del:hover { color: var(--danger); }
+  #newForm { display: grid; gap: 10px; max-width: 680px; }
+  #newForm h2 { font-size: 18px; margin: 0 0 4px; }
+  #newForm .row { display: flex; gap: 8px; }
+  #newDesc { min-height: 160px; resize: vertical; overflow: auto; }
+  main { padding: 16px 24px 48px; min-width: 0; }
+  #placeholder { padding: 60px 0; text-align: center; }
+
+  #name { font-size: 22px; font-weight: 600; background: transparent; border-color: transparent; padding: 4px 8px; margin-left: -9px; }
+  #name:hover, #description:hover { border-color: var(--line); }
+  #name:focus, #description:focus { border-color: var(--accent); }
+  #description { background: transparent; border-color: transparent; padding: 6px 8px; margin: 4px 0 0 -9px; color: var(--text); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
+  .toolbar select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; margin-left: 4px; }
+
+  .section { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 16px 0; background: var(--panel); }
+  .section .head { display: flex; gap: 8px; align-items: flex-start; }
+  .section .head .text { flex: 1; display: grid; gap: 6px; }
+  .section .head .title { font-weight: 600; }
+  .section .head .tools { display: flex; gap: 4px; }
+  .section .head .tools button { padding: 3px 8px; }
+  .section.unsorted { background: none; border-style: dashed; }
+  .section.unsorted h2 { font-size: 13px; margin: 0; }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; min-height: 80px;
+           margin-top: 10px; padding: 4px; border: 1px dashed transparent; border-radius: var(--radius); }
+  .items.empty { display: grid; place-items: center; }
+  .items.empty::before { content: "Drag images here"; color: var(--muted); font-size: 13px; }
+  body.dragging .items { border-color: var(--line); }
+
+  .tile { position: relative; display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .tile.cover { border-color: var(--accent); }
+  .tile.drag { opacity: .35; }
+  .tile .thumb { height: 220px; background: #0b0c0f; cursor: grab; overflow: hidden; }
+  .tile .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+  .tile .acts { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity .1s; }
+  .tile:hover .acts, .tile:focus-within .acts, .tile.cover .acts { opacity: 1; }
+  .tile .acts button { padding: 2px 7px; background: rgba(17,19,23,.85); }
+  .tile.cover .acts .star { color: var(--accent); border-color: var(--accent); }
+  .tile textarea { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; font-size: 13px; min-height: 38px; }
+
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 40; background: var(--panel-2);
+           border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  #toast.error { border-color: var(--danger); }
+
+  @media (max-width: 700px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    main { padding: 12px 16px 48px; }
+  }
+
+</style>
+</head>
+<body>
+<header>
+  <a href="/" title="Back to the tagger">← Tagger</a>
+  <h1>Moodboards</h1>
+  <span class="spacer"></span>
+  <span id="status" class="muted"></span>
+  <button id="export" class="primary" hidden title="Download the board as a PDF to send">Download PDF</button>
+</header>
+
+<div class="layout">
+  <aside>
+    <ul id="boards"></ul>
+    <button id="newBtn">New board</button>
+  </aside>
+  <main>
+    <form id="newForm" hidden>
+      <h2>New moodboard</h2>
+      <input id="newName" maxlength="40" placeholder="Title (up to 40 characters)" required>
+      <textarea id="newDesc" maxlength="500" rows="7" placeholder="Description: the idea, date, place, wardrobe…"></textarea>
+      <div class="row"><button class="primary" type="submit">Create</button><button type="button" id="newCancel">Cancel</button></div>
+    </form>
+    <div id="placeholder" class="muted">Loading…</div>
+    <div id="editor" hidden>
+      <input id="name" maxlength="40" placeholder="Title" aria-label="Board title">
+      <textarea id="description" maxlength="500" rows="1" placeholder="Description: the idea, date, place, wardrobe…" aria-label="Board description"></textarea>
+      <div class="toolbar">
+        <button id="addSection">Add section</button>
+        <label class="muted">PDF columns
+          <select id="columns" title="Columns of images in the PDF"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+        </label>
+        <span class="muted">Add images in the tagger: pick this board at the top, then press <b>B</b>.</span>
+      </div>
+      <div id="sections"></div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" hidden></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const newId = () => Math.random().toString(36).slice(2, 10);
+
+const state = {
+  boards: [],    // {id, name, description}
+  board: null,   // the open board: {id, name, description, images: {id: {assetId}}, sections, unsorted, notes, cover}
+  version: 0,    // bumped on every change to the open board
+  saved: 0,      // version last saved
+  saving: null,  // promise of the save in flight
+};
+const dirty = () => state.board && state.version !== state.saved;
+
+// ---------- API ----------
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`);
+  return body;
+}
+const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body) });
+
+let toastTimer;
+function toast(msg, error = false) {
+  const t = $("#toast");
+  t.textContent = msg; t.className = error ? "error" : ""; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), error ? 6000 : 2500);
+}
+
+function setStatus(text, error = false) {
+  $("#status").textContent = text;
+  $("#status").className = error ? "error" : "muted";
+}
+
+// ---------- Saving ----------
+// Every change bumps the version and saves the whole board shortly after; a change made
+// while a save is in flight is saved once that one finishes.
+let saveTimer;
+function changed() {
+  state.version++;
+  setStatus("Unsaved");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 800);
+}
+
+async function save() {
+  clearTimeout(saveTimer);
+  if (state.saving) return state.saving.then(() => dirty() && save());
+  if (!dirty()) return;
+  const b = state.board, v = state.version;
+  if (!b.name.trim()) return setStatus("Not saved: the title can't be empty", true);
+  setStatus("Saving…");
+  state.saving = post(`/api/boards/${encodeURIComponent(b.id)}`, {
+    name: b.name.trim(), description: b.description, sections: b.sections, unsorted: b.unsorted, notes: b.notes, cover: b.cover,
+    columns: b.columns,
+  }).then(() => {
+    if (state.board === b) state.saved = Math.max(state.saved, v);
+    const entry = state.boards.find(x => x.id === b.id);
+    if (entry) { entry.name = b.name.trim(); renderBoards(); }
+    setStatus(dirty() ? "Unsaved" : "Saved");
+  }, e => setStatus("Not saved: " + e.message, true)).finally(() => { state.saving = null; });
+  await state.saving;
+}
+
+// Save before leaving the open board; false if the user chose to stay with unsaved changes.
+async function flush() {
+  await save();
+  return !dirty() || confirm("Changes to this board couldn't be saved. Leave it anyway?");
+}
+
+addEventListener("beforeunload", e => { if (dirty() || state.saving) e.preventDefault(); });
+
+// ---------- Board list ----------
+function renderBoards() {
+  $("#boards").replaceChildren(...state.boards.map(b => {
+    const li = el("li", b.id === state.board?.id ? "active" : null), open = el("button", "open", b.name), del = el("button", "del", "×");
+    open.title = b.name; del.title = `Delete “${b.name}”`;
+    open.addEventListener("click", () => openBoard(b.id));
+    del.addEventListener("click", () => deleteBoard(b));
+    li.append(open, del);
+    return li;
+  }));
+}
+
+async function loadBoards() {
+  ({ boards: state.boards } = await api("/api/boards"));
+  renderBoards();
+}
+
+async function openBoard(id) {
+  if (state.board?.id === id) return renderBoard();
+  if (!(await flush())) return;
+  setStatus("");
+  try {
+    const board = await api(`/api/boards/${encodeURIComponent(id)}`);
+    state.board = board; state.version = state.saved = 0;
+    history.replaceState(null, "", "#" + id);
+  } catch (e) {
+    return toast(`Couldn't open the board: ${e.message}`, true);
+  }
+  renderBoards();
+  renderBoard();
+}
+
+function showPlaceholder(text) {
+  state.board = null;
+  $("#editor").hidden = true; $("#export").hidden = true;
+  $("#newForm").hidden = true;
+  $("#placeholder").hidden = false; $("#placeholder").textContent = text;
+  history.replaceState(null, "", location.pathname);
+}
+
+// New board: the form takes the place of the open board until created or cancelled.
+$("#newBtn").addEventListener("click", () => {
+  $("#editor").hidden = true; $("#placeholder").hidden = true; $("#export").hidden = true;
+  $("#newForm").hidden = false; $("#newName").focus();
+});
+function closeNewForm() {
+  $("#newForm").reset(); $("#newForm").hidden = true;
+  if (state.board) renderBoard();
+  else showPlaceholder(state.boards.length ? "Pick a board." : "No moodboards yet. Create one with “New board”.");
+}
+$("#newCancel").addEventListener("click", closeNewForm);
+$("#newForm").addEventListener("keydown", e => { if (e.key === "Escape") closeNewForm(); });
+$("#newForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const name = $("#newName").value.trim();
+  if (!name) return;
+  try {
+    const b = await post("/api/boards", { name, description: $("#newDesc").value });
+    closeNewForm();
+    await loadBoards();
+    openBoard(b.id);
+  } catch (err) {
+    toast(`Couldn't create the board: ${err.message}`, true);
+  }
+});
+
+// ---------- Board editor ----------
+function autogrow(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+document.addEventListener("input", e => { if (e.target.matches("textarea")) autogrow(e.target); });
+
+function renderBoard() {
+  const b = state.board;
+  $("#placeholder").hidden = true; $("#newForm").hidden = true; $("#editor").hidden = false; $("#export").hidden = false;
+  $("#name").value = b.name;
+  $("#description").value = b.description;
+  $("#columns").value = String(b.columns);
+  renderSections();
+  autogrow($("#description"));
+}
+
+function renderSections() {
+  const b = state.board, root = $("#sections");
+  const count = Object.keys(b.images).length;
+  // Always shown, so images can be dragged back out of a section
+  const unsorted = el("div", "section unsorted");
+  unsorted.append(el("h2", null, "Unsorted"), el("div", "muted",
+    !count ? "No images yet. In the tagger, pick this board at the top and press B on the images you want."
+    : b.sections.length ? "Not in the PDF. Drag images into a section, or back here to leave them out."
+    : "Everything here goes in the PDF. Add sections to group images and describe each group."));
+  unsorted.append(itemsBox("unsorted", b.unsorted));
+  root.replaceChildren(unsorted, ...b.sections.map(sectionBlock));
+  root.querySelectorAll("textarea").forEach(autogrow);
+}
+
+function sectionBlock(s, i) {
+  const b = state.board, sec = el("div", "section"), head = el("div", "head"), text = el("div", "text"), tools = el("div", "tools");
+  const title = el("input", "title"), desc = el("textarea");
+  title.value = s.title; title.placeholder = "Section title, e.g. Poses"; title.maxLength = 200;
+  desc.value = s.description; desc.placeholder = "What this section is about"; desc.maxLength = 2000; desc.rows = 1;
+  title.addEventListener("input", () => { s.title = title.value; changed(); });
+  desc.addEventListener("input", () => { s.description = desc.value; changed(); });
+  text.append(title, desc);
+  const tool = (label, tip, fn, disabled = false) => {
+    const btn = el("button", null, label); btn.title = tip; btn.disabled = disabled;
+    btn.addEventListener("click", fn); tools.append(btn);
+  };
+  tool("↑", "Move section up", () => moveSection(i, -1), i === 0);
+  tool("↓", "Move section down", () => moveSection(i, 1), i === b.sections.length - 1);
+  tool("×", "Delete section (its images go back to Unsorted)", () => deleteSection(i));
+  head.append(text, tools);
+  sec.append(head, itemsBox(s.id, s.items));
+  return sec;
+}
+
+function moveSection(i, d) {
+  const s = state.board.sections;
+  [s[i], s[i + d]] = [s[i + d], s[i]];
+  changed(); renderSections();
+}
+
+function deleteSection(i) {
+  const b = state.board, s = b.sections[i];
+  if ((s.items.length || s.title || s.description) &&
+      !confirm(`Delete the section${s.title ? ` “${s.title}”` : ""}? Its images go back to Unsorted.`)) return;
+  b.unsorted.push(...s.items);
+  b.sections.splice(i, 1);
+  changed(); renderSections();
+}
+
+$("#addSection").addEventListener("click", () => {
+  state.board.sections.push({ id: newId(), title: "", description: "", items: [] });
+  changed(); renderSections();
+  [...$("#sections").querySelectorAll(".section .title")].pop().focus();
+});
+
+$("#name").addEventListener("input", e => { state.board.name = e.target.value; changed(); });
+$("#description").addEventListener("input", e => { state.board.description = e.target.value; changed(); });
+$("#columns").addEventListener("change", e => { state.board.columns = +e.target.value; changed(); });
+
+async function deleteBoard(b) {
+  if (!confirm(`Delete the moodboard “${b.name}”? Its sections and notes are lost; the images stay in Karakeep.`)) return;
+  const open = state.board?.id === b.id;
+  try {
+    if (open) { clearTimeout(saveTimer); await state.saving; state.version = state.saved; }
+    await post(`/api/boards/${encodeURIComponent(b.id)}/delete`, {});
+    await loadBoards();
+  } catch (e) {
+    return toast(`Couldn't delete the board: ${e.message}`, true);
+  }
+  toast(`Deleted “${b.name}”`);
+  if (open) showPlaceholder(state.boards.length ? "Board deleted. Pick another one." : "No moodboards left. Create one with “New board”.");
+}
+
+// ---------- Images ----------
+function itemsBox(key, ids) {
+  const box = el("div", "items");
+  box.dataset.key = key;
+  box.append(...ids.map(tile));
+  box.classList.toggle("empty", !ids.length);
+  box.addEventListener("dragover", onDragOver);
+  box.addEventListener("drop", e => e.preventDefault());
+  return box;
+}
+
+function tile(id) {
+  const b = state.board, t = el("figure", "tile"), thumb = el("div", "thumb"), img = el("img"), acts = el("div", "acts");
+  t.dataset.id = id;
+  t.classList.toggle("cover", b.cover === id);
+  img.src = `/api/assets/${encodeURIComponent(b.images[id].assetId)}?w=600`;
+  img.alt = b.images[id].title || ""; img.loading = "lazy";
+  thumb.title = "Drag to move";
+  thumb.append(img);
+  const star = el("button", "star", "★"), x = el("button", null, "×");
+  star.title = "Use as the cover of the PDF"; x.title = "Remove from this board";
+  star.addEventListener("click", () => setCover(id));
+  x.addEventListener("click", () => removeImage(id, t));
+  acts.append(star, x);
+  const note = el("textarea");
+  note.rows = 1; note.maxLength = 1000; note.value = b.notes[id] || "";
+  note.placeholder = "Mood: what to take from this image";
+  note.addEventListener("input", () => { b.notes[id] = note.value; changed(); });
+  // Only the picture starts a drag, so text in the note can still be selected.
+  thumb.addEventListener("mousedown", () => { t.draggable = true; });
+  thumb.addEventListener("mouseup", () => { t.draggable = false; });
+  t.addEventListener("dragstart", e => onDragStart(e, t));
+  t.addEventListener("dragend", e => onDragEnd(e, t));
+  t.append(thumb, acts, note);
+  return t;
+}
+
+function setCover(id) {
+  const b = state.board;
+  b.cover = b.cover === id ? null : id;
+  document.querySelectorAll("#sections .tile").forEach(t => t.classList.toggle("cover", t.dataset.id === b.cover));
+  changed();
+  toast(b.cover ? "Cover set" : "Cover removed");
+}
+
+async function removeImage(id, t) {
+  const b = state.board;
+  try {
+    await post("/api/lists/bulk", { bookmarkIds: [id], add: [], remove: [b.id] });
+  } catch (e) {
+    return toast(`Couldn't remove it: ${e.message}`, true);
+  }
+  if (state.board !== b) return;
+  delete b.images[id];  // its note stays, in case it comes back
+  b.unsorted = b.unsorted.filter(x => x !== id);
+  for (const s of b.sections) s.items = s.items.filter(x => x !== id);
+  if (b.cover === id) b.cover = null;
+  changed();
+  const box = t.parentElement;
+  t.remove();
+  box.classList.toggle("empty", !box.querySelector(".tile"));
+}
+
+// ---------- Drag and drop ----------
+// The tile itself moves while dragging; on drop the order is read back from the page.
+let dragging = null;
+
+function onDragStart(e, t) {
+  dragging = t;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", t.dataset.id); // Firefox needs data to start a drag
+  setTimeout(() => { t.classList.add("drag"); document.body.classList.add("dragging"); });
+}
+
+function onDragOver(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const box = e.currentTarget, over = e.target.closest(".tile");
+  if (over && over !== dragging && over.parentElement === box) {
+    const r = over.getBoundingClientRect();
+    box.insertBefore(dragging, e.clientX > r.left + r.width / 2 ? over.nextSibling : over);
+  } else if (!over && dragging.parentElement !== box) {
+    box.append(dragging);
+  }
+  document.querySelectorAll("#sections .items").forEach(x => x.classList.toggle("empty", !x.querySelector(".tile")));
+}
+
+function onDragEnd(e, t) {
+  t.draggable = false;
+  t.classList.remove("drag");
+  document.body.classList.remove("dragging");
+  dragging = null;
+  if (e.dataTransfer.dropEffect === "none") return renderSections(); // cancelled: put it back
+  const b = state.board, order = id => [...document.querySelectorAll(`#sections .items[data-key="${id}"] .tile`)].map(x => x.dataset.id);
+  const unsorted = order("unsorted"), sections = b.sections.map(s => order(s.id));
+  const before = JSON.stringify([b.unsorted, b.sections.map(s => s.items)]);
+  b.unsorted = unsorted;
+  b.sections.forEach((s, i) => { s.items = sections[i]; });
+  if (JSON.stringify([b.unsorted, sections]) !== before) changed();
+}
+
+// ---------- PDF ----------
+// The server builds the PDF; it downloads straight away, in colour, with no print dialog.
+$("#export").addEventListener("click", async () => {
+  await save();
+  if (dirty()) toast("Latest changes aren't saved; the PDF shows the board as last saved", true);
+  const b = state.board, btn = $("#export");
+  btn.disabled = true; btn.textContent = "Making PDF…";
+  try {
+    const res = await fetch(`/api/boards/${encodeURIComponent(b.id)}/pdf`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`);
+    const a = el("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = `${b.name.trim()}.pdf`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch (e) {
+    toast(`Couldn't make the PDF: ${e.message}`, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "Download PDF";
+  }
+});
+
+// ---------- Start ----------
+(async function start() {
+  try {
+    await loadBoards();
+  } catch (e) {
+    return showPlaceholder(`Couldn't load moodboards: ${e.message}`);
+  }
+  const want = decodeURIComponent(location.hash.slice(1));
+  const first = state.boards.find(b => b.id === want) || state.boards[0];
+  if (first) openBoard(first.id);
+  else showPlaceholder("No moodboards yet. Create one with “New board”.");
+})();
+</script>
+</body>
+</html>

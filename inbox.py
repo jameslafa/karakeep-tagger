@@ -23,6 +23,8 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 
+from karakeep import DATA_DIR
+
 SEAFILE_URL = os.environ.get("SEAFILE_URL", "").rstrip("/")
 SEAFILE_TOKEN = os.environ.get("SEAFILE_TOKEN", "")
 # "folder=List name,folder2=Other list": Seafile folder (relative to the library root)
@@ -31,7 +33,6 @@ FOLDERS = os.environ.get("INBOX_FOLDERS", "")
 TAG = os.environ.get("INBOX_TAG", "").strip()  # optional tag for every import
 POLL = int(os.environ.get("INBOX_POLL_SECONDS", "60"))
 DRY_RUN = os.environ.get("INBOX_DRY_RUN", "").lower() in ("1", "true", "yes")
-STATE_DIR = os.environ.get("INBOX_STATE_DIR", "/data")
 TIMEOUT = 60
 MAX_BACKOFF = 3600
 
@@ -40,7 +41,7 @@ CONTENT_TYPES = {
     ".webp": "image/webp", ".gif": "image/gif",
 }
 HEIC = {".heic", ".heif"}  # converted to JPEG, Karakeep does not accept them
-STATE_FILE = os.path.join(STATE_DIR, "inbox-state.json")
+STATE_FILE = os.path.join(DATA_DIR, "inbox-state.json")
 
 
 def enabled():
@@ -184,7 +185,7 @@ class Inbox:
             return {}
 
     def save_state(self):
-        os.makedirs(STATE_DIR, exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
         tmp = STATE_FILE + ".tmp"
         with open(tmp, "w") as f:
             json.dump(self.state, f, indent=1, sort_keys=True)

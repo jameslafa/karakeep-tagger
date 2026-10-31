@@ -1,7 +1,8 @@
-"""Karakeep image tagger: a tiny stdlib-only proxy + static page.
+"""Karakeep image tagger: the web server, a small proxy in front of Karakeep plus two pages.
 
-The browser only talks to this server; the Karakeep API key stays here.
-Nothing is stored: every request is answered from Karakeep directly.
+The browser only talks to this server; the Karakeep API key stays here. Tags and lists
+are answered from Karakeep directly; moodboards.py keeps the one thing Karakeep has no
+place for, the layout of each moodboard.
 """
 
 import base64
@@ -11,16 +12,16 @@ import json
 import os
 import re
 import sys
+import traceback
 import urllib.error
 import urllib.parse
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import inbox
+import moodboards
+from karakeep import API_KEY, KARAKEEP_URL, KarakeepError, clean_ids, is_image, kk, paginate
 
-KARAKEEP_URL = os.environ.get("KARAKEEP_URL", "").rstrip("/")
-API_KEY = os.environ.get("KARAKEEP_API_KEY", "")
 # Optional separate key for the inbox importer (defaults to KARAKEEP_API_KEY)
 INBOX_API_KEY = os.environ.get("KARAKEEP_INBOX_API_KEY") or API_KEY
 PORT = int(os.environ.get("PORT", "8080"))
@@ -32,48 +33,8 @@ WORKERS = int(os.environ.get("TAGGER_CONCURRENCY", "8"))
 HOSTS = {"localhost", "127.0.0.1", "[::1]"} | {
     h.strip().lower() for h in os.environ.get("TAGGER_HOSTS", "").split(",") if h.strip()
 }
-TIMEOUT = 30
-
-API = KARAKEEP_URL + "/api/v1"
-INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "index.html")
-ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-
-
-class KarakeepError(Exception):
-    def __init__(self, status, body):
-        super().__init__(f"Karakeep {status}: {body[:200]}")
-        self.status = status
-
-
-def kk(method, path, body=None, raw=False, key=None):
-    """Call the Karakeep API. Returns parsed JSON, or the raw response if raw=True."""
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(API + path, data=data, method=method)
-    req.add_header("Authorization", "Bearer " + (key or API_KEY))
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-    try:
-        resp = urllib.request.urlopen(req, timeout=TIMEOUT)
-    except urllib.error.HTTPError as e:
-        raise KarakeepError(e.code, e.read().decode(errors="replace")) from None
-    if raw:
-        return resp
-    with resp:
-        payload = resp.read()
-    return json.loads(payload) if payload else None
-
-
-def paginate(path, key):
-    items, cursor = [], None
-    while True:
-        q = {"limit": 100}
-        if cursor:
-            q["cursor"] = cursor
-        page = kk("GET", f"{path}?{urllib.parse.urlencode(q)}")
-        items.extend(page[key])
-        cursor = page.get("nextCursor")
-        if not cursor:
-            return items
+STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+PAGES = {"/": "index.html", "/index.html": "index.html", "/boards": "boards.html", "/boards.html": "boards.html"}
 
 
 def slim(b):
@@ -86,11 +47,6 @@ def slim(b):
         "createdAt": b["createdAt"],
         "tags": sorted(t["name"] for t in b["tags"]),
     }
-
-
-def is_image(b):
-    c = b.get("content") or {}
-    return c.get("type") == "asset" and c.get("assetType") == "image"
 
 
 def list_images():
@@ -160,12 +116,6 @@ def bulk_tags(body):
         "updated": [r["ok"] for r in results if "ok" in r],
         "failed": [r["error"] for r in results if "error" in r],
     }
-
-
-def clean_ids(ids, what):
-    if not isinstance(ids, list) or not all(isinstance(i, str) and ID_RE.match(i) for i in ids):
-        raise ValueError(f"{what} must be a list of ids")
-    return ids
 
 
 def bulk_lists(body):
@@ -244,17 +194,23 @@ class Handler(BaseHTTPRequestHandler):
             fn()
         except ValueError as e:
             self.send_json(400, {"error": str(e)})
+        except moodboards.NotFound as e:
+            self.send_json(404, {"error": str(e)})
         except KarakeepError as e:
             self.send_json(404 if e.status == 404 else 502, {"error": str(e)})
         except (urllib.error.URLError, TimeoutError) as e:
             self.send_json(502, {"error": f"Cannot reach Karakeep: {e}"})
+        except Exception as e:  # a bug: log it, and tell the page instead of dropping the connection
+            traceback.print_exc()
+            self.send_json(500, {"error": f"Internal error: {e}"})
 
     def do_GET(self):
         if not self.known_host() or not self.authorized():
             return
-        path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html"):
-            return self.serve_index()
+        url = urllib.parse.urlparse(self.path)
+        path = url.path
+        if path in PAGES:
+            return self.serve_page(PAGES[path])
         if path == "/healthz":
             return self.send_json(200, {"ok": True})
         if path == "/api/bookmarks":
@@ -265,15 +221,39 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_errors(lambda: self.send_json(200, {"lists": list_lists()}))
         if path == "/api/inbox/status":
             return self.send_json(200, INBOX.snapshot() if INBOX else {"enabled": False})
+        if path == "/api/boards":
+            return self.handle_errors(lambda: self.send_json(200, {"boards": moodboards.list_boards()}))
+        m = re.match(r"^/api/boards/([A-Za-z0-9_-]{1,64})$", path)
+        if m:
+            return self.handle_errors(lambda: self.send_json(200, moodboards.get_board(m.group(1))))
+        m = re.match(r"^/api/boards/([A-Za-z0-9_-]{1,64})/pdf$", path)
+        if m:
+            return self.handle_errors(lambda: self.send_pdf(*moodboards.pdf(m.group(1), WORKERS)))
         m = re.match(r"^/api/assets/([A-Za-z0-9-]{1,64})$", path)
         if m:
-            return self.handle_errors(lambda: self.proxy_asset(m.group(1)))
+            w = urllib.parse.parse_qs(url.query).get("w", [""])[0]
+            width = max(200, min(2400, int(w))) if w.isdigit() else None
+            return self.handle_errors(lambda: self.proxy_asset(m.group(1), width))
         self.send_json(404, {"error": "not found"})
+
+    def post_action(self, path):
+        """The handler for a POST path, called with the parsed JSON body."""
+        if path == "/api/tags/bulk":
+            return bulk_tags
+        if path == "/api/lists/bulk":
+            return bulk_lists
+        if path == "/api/boards":
+            return moodboards.create_board
+        m = re.match(r"^/api/boards/([A-Za-z0-9_-]{1,64})(/delete)?$", path)
+        if m:
+            fn = moodboards.delete_board if m.group(2) else moodboards.save_board
+            return lambda body: fn(m.group(1), body)
+        return None
 
     def do_POST(self):
         if not self.known_host() or not self.authorized():
             return
-        action = {"/api/tags/bulk": bulk_tags, "/api/lists/bulk": bulk_lists}.get(urllib.parse.urlparse(self.path).path)
+        action = self.post_action(urllib.parse.urlparse(self.path).path)
         if not action:
             return self.send_json(404, {"error": "not found"})
         # CSRF: a cross-site page can only send a JSON content type after a CORS preflight,
@@ -300,8 +280,20 @@ class Handler(BaseHTTPRequestHandler):
 
         self.handle_errors(run)
 
-    def serve_index(self):
-        with open(INDEX, "rb") as f:
+    def send_pdf(self, name, data):
+        ascii_name = re.sub(r"[^A-Za-z0-9 ._-]", "_", name).strip() or "moodboard"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", "attachment; filename=\"%s.pdf\"; filename*=UTF-8''%s.pdf"
+                         % (ascii_name, urllib.parse.quote(name, safe="")))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_page(self, name):
+        with open(os.path.join(STATIC, name), "rb") as f:
             data = f.read()
         # Allow only the page's own inline scripts, by hash, so injected script can't run.
         hashes = " ".join(
@@ -324,12 +316,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def proxy_asset(self, asset_id):
+    def proxy_asset(self, asset_id, width=None):
+        """Stream an image from Karakeep, or with width, a resized JPEG of it (the original
+        when it can't be resized)."""
         resp = kk("GET", f"/assets/{asset_id}", raw=True)
         with resp:
             ctype = resp.headers.get("Content-Type", "application/octet-stream")
             if not ctype.startswith("image/"):
                 raise ValueError("asset is not an image")
+            body = None
+            if width and ctype != "image/svg+xml":
+                body = resp.read()
+                small = moodboards.resize_image(body, width)
+                if small:
+                    body, ctype = small, "image/jpeg"
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Cache-Control", "private, max-age=31536000, immutable")
@@ -337,15 +337,18 @@ class Handler(BaseHTTPRequestHandler):
             # letting it run as this site.
             self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
             self.send_header("X-Content-Type-Options", "nosniff")
-            if resp.headers.get("Content-Length"):
-                self.send_header("Content-Length", resp.headers["Content-Length"])
+            length = len(body) if body is not None else resp.headers.get("Content-Length")
+            if length:
+                self.send_header("Content-Length", str(length))
             self.end_headers()
             try:
-                while chunk := resp.read(64 * 1024):
-                    self.wfile.write(chunk)
+                if body is not None:
+                    self.wfile.write(body)
+                else:
+                    while chunk := resp.read(64 * 1024):
+                        self.wfile.write(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 pass  # browser scrolled away / cancelled
-
 
 INBOX = None
 

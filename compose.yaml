@@ -9,7 +9,7 @@ services:
     # Settings (KARAKEEP_URL, KARAKEEP_API_KEY, TAGGER_HOSTS, ...): see .env.example
     env_file: .env
     volumes:
-      # Inbox import state (which files became which bookmarks); only used with SEAFILE_*
+      # Moodboard layouts, and the inbox import state (which files became which bookmarks)
       - inbox-state:/data
 
 volumes:
