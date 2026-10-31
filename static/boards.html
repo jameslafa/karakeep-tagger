@@ -55,6 +55,8 @@
   #name:hover, #description:hover { border-color: var(--line); }
   #name:focus, #description:focus { border-color: var(--accent); }
   #description { background: transparent; border-color: transparent; padding: 6px 8px; margin: 4px 0 0 -9px; color: var(--text); }
+  .hint { font-size: 12px; margin: 4px 0; }
+  .hint code { font: 11px ui-monospace, monospace; background: var(--panel-2); border-radius: 3px; padding: 0 3px; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
   .toolbar select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; margin-left: 4px; }
 
@@ -134,12 +136,14 @@
       <h2>New moodboard</h2>
       <input id="newName" maxlength="40" placeholder="Title (up to 40 characters)" required>
       <textarea id="newDesc" maxlength="500" rows="7" placeholder="Description: the idea, date, place, wardrobe…"></textarea>
+      <div class="muted hint">Descriptions and notes can use <code>**bold**</code>, <code>*italic*</code>, <code>- </code> lists and links; the PDF shows them formatted.</div>
       <div class="row"><button class="primary" type="submit">Create</button><button type="button" id="newCancel">Cancel</button></div>
     </form>
     <div id="placeholder" class="muted">Loading…</div>
     <div id="editor" hidden>
       <input id="name" maxlength="40" placeholder="Title" aria-label="Board title">
       <textarea id="description" maxlength="500" rows="1" placeholder="Description: the idea, date, place, wardrobe…" aria-label="Board description"></textarea>
+      <div class="muted hint">Descriptions and notes can use <code>**bold**</code>, <code>*italic*</code>, <code>- </code> lists and links; the PDF shows them formatted.</div>
       <div class="toolbar">
         <button id="addSection">Add section</button>
         <label class="muted">PDF columns

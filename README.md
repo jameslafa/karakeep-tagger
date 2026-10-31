@@ -136,6 +136,10 @@ board. Open **Moodboards** in the header of the tagger to manage them.
    don't open pages taller than about 5 m. Images are resized to 1600 px so the file stays
    small enough to send by chat or email.
 
+Descriptions and notes accept a little Markdown, shown formatted in the PDF: `**bold**`,
+`*italic*` or `_italic_`, lines starting with `- ` as a bullet list, and links, either
+`[text](https://…)` or a bare `https://…` address. An empty line starts a new paragraph.
+
 New images land in *Unsorted*. Once a board has sections, *Unsorted* is a staging area
 and is left out of the PDF; a board without sections prints everything in it.
 
