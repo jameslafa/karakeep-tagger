@@ -16,9 +16,10 @@ import every image you drop there into Karakeep, see [Inbox import](#inbox-impor
 
 ## Features
 
-- Grid of every image bookmark, filterable by tag or "untagged"
+- Grid of every image bookmark, with a tag filter (a tag or "untagged") and a list filter (a list or "in no list") that combine; the tag filter only offers tags found in the chosen list
 - Multi-select with click, Shift+click, arrow keys and ⌘/Ctrl+A
 - Tag pop-over with autocomplete; add or remove a tag on all selected images at once
+- Put the selected images into a Karakeep list, or take them out, in a separate list pop-over
 - Full-size viewer for tagging one image after another without touching the mouse
 - Partial tags (on some of the selected images) shown as dashed chips; click to apply to all
 - Optional inbox: drop images into a Seafile library from any device, they become Karakeep
@@ -92,7 +93,8 @@ has no password unless you set `TAGGER_PASSWORD`. Keep it on a private network.
 What it does to stay safe:
 
 - The Karakeep API key stays on the server. The browser only talks to the tagger, which
-  forwards a fixed set of calls: list bookmarks, list tags, fetch images, add or remove tags.
+  forwards a fixed set of calls: list bookmarks, tags and lists, fetch images, add or
+  remove tags, add to or remove from lists.
 - Requests for host names not in `TAGGER_HOSTS` are refused (status 421), which blocks
   DNS rebinding attacks.
 - Tag changes must be same-origin JSON requests, so other websites can't make your
@@ -178,7 +180,9 @@ and `pip install pillow pillow-heif` if you want HEIC files converted.
 Grid
 - Click: toggle selection. Shift+click: select a range. ⌘/Ctrl+A: select all. Esc: clear.
 - Arrow keys: move focus (Shift extends the selection). Space: toggle. Home/End: first/last image.
-- `T`: tag pop-over for the selection (or the focused image). Enter, `O` or double-click: open viewer.
+- `T`: tag pop-over for the selection (or the focused image). `L`: list pop-over for the
+  same images. Both scroll when long and resize from the bottom-right corner.
+- Enter, `O` or double-click: open viewer.
 - `F`: focus the tag filter. `R`: re-apply the filter (images you just tagged
   stay visible and dimmed until you do).
 
@@ -189,7 +193,13 @@ Tag field (pop-over and viewer)
 - `-name` removes a tag. Chips: × removes; clicking a dashed (partial) chip adds
   it to all selected images.
 - Viewer: ←/→ (when the field is empty) or PageUp/PageDown go to the previous/next
-  image. Enter on an empty field goes to the next one. Esc closes.
+  image. Enter on an empty field goes to the next one. `L` focuses the list picker. Esc closes.
+
+Lists
+- The list pop-over and the viewer show the lists the image is in as green chips; × removes it.
+  A dashed chip means only some of the selected images are in that list; click to add all.
+- Pick a list from the drop-down to add all selected images. Nested lists show as
+  "Parent / Child". Smart lists are shown but can't be edited.
 
 ## Notes
 
@@ -198,6 +208,8 @@ Tag field (pop-over and viewer)
   time, nearest to the screen first. The browser caches them.
 - Bulk changes are sent as one request per bookmark (`TAGGER_CONCURRENCY` in
   parallel). Each bookmark is then re-read, so the page shows Karakeep's actual state.
+- Karakeep doesn't report lists on bookmarks, so on load the tagger reads every list's
+  contents once (one request per 100 bookmarks per list).
 
 ## License
 

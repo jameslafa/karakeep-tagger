@@ -101,6 +101,25 @@ def list_tags():
     return sorted((t["name"] for t in paginate("/tags", "tags")), key=str.lower)
 
 
+def list_lists():
+    """Every list with the ids of the bookmarks in it (Karakeep doesn't put lists on bookmarks)."""
+    lists = kk("GET", "/lists")["lists"]
+
+    def members(l):
+        try:
+            return [b["id"] for b in paginate(f"/lists/{l['id']}/bookmarks", "bookmarks")]
+        except KarakeepError:
+            return []  # e.g. a smart list whose query can't be evaluated
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        ids = list(pool.map(members, lists))
+    return [
+        {"id": l["id"], "name": l["name"], "icon": l.get("icon"), "parentId": l.get("parentId"),
+         "type": l.get("type", "manual"), "bookmarkIds": m}
+        for l, m in zip(lists, ids)
+    ]
+
+
 def clean_tags(names):
     if not isinstance(names, list):
         raise ValueError("tags must be a list")
@@ -122,8 +141,8 @@ def apply_tags(bookmark_id, add, remove):
 
 
 def bulk_tags(body):
-    ids = body.get("bookmarkIds")
-    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and ID_RE.match(i) for i in ids):
+    ids = clean_ids(body.get("bookmarkIds"), "bookmarkIds")
+    if not ids:
         raise ValueError("bookmarkIds must be a non-empty list of ids")
     add, remove = clean_tags(body.get("add", [])), clean_tags(body.get("remove", []))
     if not add and not remove:
@@ -133,6 +152,40 @@ def bulk_tags(body):
         try:
             return {"ok": apply_tags(bid, add, remove)}
         except Exception as e:  # report per bookmark, keep going
+            return {"error": {"id": bid, "message": str(e)}}
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        results = list(pool.map(one, ids))
+    return {
+        "updated": [r["ok"] for r in results if "ok" in r],
+        "failed": [r["error"] for r in results if "error" in r],
+    }
+
+
+def clean_ids(ids, what):
+    if not isinstance(ids, list) or not all(isinstance(i, str) and ID_RE.match(i) for i in ids):
+        raise ValueError(f"{what} must be a list of ids")
+    return ids
+
+
+def bulk_lists(body):
+    ids = clean_ids(body.get("bookmarkIds"), "bookmarkIds")
+    add, remove = clean_ids(body.get("add", []), "add"), clean_ids(body.get("remove", []), "remove")
+    if not ids or (not add and not remove):
+        raise ValueError("nothing to add or remove")
+
+    def one(bid):
+        try:
+            for lid in add:
+                kk("PUT", f"/lists/{lid}/bookmarks/{bid}")
+            for lid in remove:
+                try:
+                    kk("DELETE", f"/lists/{lid}/bookmarks/{bid}")
+                except KarakeepError as e:
+                    if e.status != 400:  # 400: already not in the list
+                        raise
+            return {"ok": {"id": bid}}
+        except Exception as e:
             return {"error": {"id": bid, "message": str(e)}}
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
@@ -208,6 +261,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_errors(lambda: self.send_json(200, {"bookmarks": list_images()}))
         if path == "/api/tags":
             return self.handle_errors(lambda: self.send_json(200, {"tags": list_tags()}))
+        if path == "/api/lists":
+            return self.handle_errors(lambda: self.send_json(200, {"lists": list_lists()}))
         if path == "/api/inbox/status":
             return self.send_json(200, INBOX.snapshot() if INBOX else {"enabled": False})
         m = re.match(r"^/api/assets/([A-Za-z0-9-]{1,64})$", path)
@@ -218,7 +273,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.known_host() or not self.authorized():
             return
-        if urllib.parse.urlparse(self.path).path != "/api/tags/bulk":
+        action = {"/api/tags/bulk": bulk_tags, "/api/lists/bulk": bulk_lists}.get(urllib.parse.urlparse(self.path).path)
+        if not action:
             return self.send_json(404, {"error": "not found"})
         # CSRF: a cross-site page can only send a JSON content type after a CORS preflight,
         # which this server never grants; browsers also mark cross-site requests in Sec-Fetch-Site.
@@ -240,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("invalid JSON") from None
             if not isinstance(body, dict):
                 raise ValueError("invalid body")
-            self.send_json(200, bulk_tags(body))
+            self.send_json(200, action(body))
 
         self.handle_errors(run)
 

@@ -55,6 +55,9 @@
   .chip.partial { background: transparent; border-style: dashed; cursor: pointer; }
   .chip.partial .n { color: var(--muted); margin-left: 4px; font-size: 11px; }
   .chip.ai { border-color: #7a6bd6; }
+  .chip.list { background: #2d3a2e; border-color: #5fae6a; }
+  .lists h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+  .lists select { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
   .chip button { border: 0; background: none; padding: 0 5px; color: var(--muted); border-radius: 999px; }
   .chip button:hover, .chip button:focus-visible { color: var(--danger); }
   .field { position: relative; }
@@ -68,8 +71,17 @@
   .suggest li.create { font-style: italic; }
   .suggest li.remove { color: var(--danger); }
 
-  #pop { position: fixed; z-index: 20; width: 320px; max-width: calc(100vw - 16px); background: var(--panel); border: 1px solid var(--line);
+  /* Resizable from the bottom-right corner. Suggestions sit in the flow here so the overflow clip can't hide them;
+     when space runs out the chips scroll and the field stays in view. */
+  #pop { position: fixed; z-index: 20; width: 440px; min-width: 280px; min-height: 140px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
+         display: flex; flex-direction: column; overflow: hidden; resize: both; background: var(--panel); border: 1px solid var(--line);
          border-radius: var(--radius); padding: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  #pop .editor, #pop .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #pop .editor[hidden], #pop .lists[hidden] { display: none; }
+  #pop .chips { flex: 0 1 auto; min-height: 0; overflow: auto; }
+  #pop .suggest { position: static; flex-shrink: 0; margin-top: 4px; }
+  #pop .field { flex-shrink: 0; }
+  #pop .lists h3 { display: none; }
   #pop h2, #viewer h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
 
   #viewer { position: fixed; inset: 0; z-index: 30; background: rgba(8,9,11,.97); display: grid; grid-template-columns: 1fr 340px; }
@@ -95,7 +107,8 @@
 <body>
 <header>
   <h1>Karakeep Tagger</h1>
-  <select id="filter" title="Filter (F)"></select>
+  <select id="filter" title="Filter by tag (F)"></select>
+  <select id="listFilter" title="Filter by list"></select>
   <span id="count" class="muted"></span>
   <button id="stale" hidden title="Re-apply filter (R)"></button>
   <span class="spacer"></span>
@@ -103,6 +116,7 @@
   <button id="selectAll" title="Select all (⌘/Ctrl+A)">Select all</button>
   <button id="clearSel" title="Clear selection (Esc)" disabled>Clear</button>
   <button id="tagSel" class="primary" title="Tag selected (T)" disabled>Tag selected…</button>
+  <button id="listSel" title="Add selected to a list (L)" disabled>List…</button>
 </header>
 <div id="inbox" role="alert" hidden></div>
 
@@ -112,11 +126,11 @@
 <footer>
   <span><kbd>Click</kbd> select</span><span><kbd>Shift</kbd>+click range</span><span><kbd>⌘/Ctrl A</kbd> all</span>
   <span><kbd>←↑→↓</kbd> move (<kbd>Shift</kbd> extends)</span><span><kbd>Space</kbd> toggle</span>
-  <span><kbd>T</kbd> tag</span><span><kbd>Enter</kbd>/double-click open</span><span><kbd>F</kbd> filter</span>
+  <span><kbd>T</kbd> tag</span><span><kbd>L</kbd> list</span><span><kbd>Enter</kbd>/double-click open</span><span><kbd>F</kbd> filter</span>
   <span><kbd>R</kbd> re-apply filter</span><span><kbd>Esc</kbd> clear</span>
 </footer>
 
-<div id="pop" hidden role="dialog" aria-label="Edit tags"><h2></h2><div class="editor"></div></div>
+<div id="pop" hidden role="dialog" aria-label="Edit tags or lists"><h2></h2><div class="editor"></div><div class="lists"></div></div>
 
 <div id="viewer" hidden role="dialog" aria-label="Image viewer">
   <div class="stage">
@@ -128,9 +142,10 @@
     <div class="top"><h2 class="pos"></h2><button class="close" title="Close (Esc)">✕</button></div>
     <div class="name"></div>
     <div class="editor"></div>
+    <div class="lists"></div>
     <div class="hints">
       <span><kbd>Enter</kbd> add tag · <kbd>Tab</kbd> complete · <kbd>↑↓</kbd> choose</span>
-      <span><kbd>-name</kbd> remove a tag</span>
+      <span><kbd>-name</kbd> remove a tag · <kbd>L</kbd> lists</span>
       <span><kbd>←</kbd><kbd>→</kbd> prev/next (when the field is empty)</span>
       <span><kbd>Enter</kbd> on empty field → next · <kbd>Esc</kbd> close</span>
     </div>
@@ -150,8 +165,10 @@ const state = {
   all: [],              // image bookmarks, Karakeep order
   byId: new Map(),
   knownTags: new Set(), // every tag name in Karakeep, for autocomplete
+  lists: [],            // Karakeep lists {id, name, path, type}; each bookmark has b.lists = [list ids]
   view: [],             // bookmarks currently shown (snapshot taken when the filter is applied)
-  filter: "all",        // "all" | "untagged" | "tag:<name>"
+  filter: "all",        // tag filter: "all" | "untagged" | "tag:<name>"
+  listFilter: "all",    // list filter: "all" | "nolist" | "list:<id>"; combined with the tag filter
   selected: new Set(),
   anchor: null,         // index in view for shift ranges
   focus: 0,
@@ -178,28 +195,29 @@ function toast(msg, error = false) {
 // written back once no newer change for that bookmark is still queued.
 let queue = Promise.resolve();
 const pending = new Map();
-function mutate(ids, add = [], remove = []) {
+// kind is "tags" (names) or "lists" (list ids).
+function mutate(ids, add = [], remove = [], kind = "tags") {
   if (!ids.length || (!add.length && !remove.length)) return;
-  const before = new Map(ids.map(id => [id, state.byId.get(id).tags]));
+  const before = new Map(ids.map(id => [id, state.byId.get(id)[kind]]));
   for (const id of ids) {
-    const b = state.byId.get(id), t = new Set(b.tags);
+    const b = state.byId.get(id), t = new Set(b[kind]);
     add.forEach(n => t.add(n)); remove.forEach(n => t.delete(n));
-    b.tags = [...t].sort(cmp);
+    b[kind] = kind === "tags" ? [...t].sort(cmp) : [...t];
     pending.set(id, (pending.get(id) || 0) + 1);
   }
-  add.forEach(n => state.knownTags.add(n));
+  if (kind === "tags") add.forEach(n => state.knownTags.add(n));
   changed(ids);
 
   queue = queue.then(async () => {
     let updated = [], failed = [];
     try {
-      ({ updated, failed } = await api("/api/tags/bulk", { method: "POST", body: JSON.stringify({ bookmarkIds: ids, add, remove }) }));
+      ({ updated, failed } = await api(`/api/${kind}/bulk`, { method: "POST", body: JSON.stringify({ bookmarkIds: ids, add, remove }) }));
     } catch (e) {
       failed = ids.map(id => ({ id, message: e.message }));
     }
     const settle = id => { const n = pending.get(id) - 1; n ? pending.set(id, n) : pending.delete(id); return !n; };
-    for (const u of updated) if (settle(u.id)) state.byId.get(u.id).tags = u.tags;
-    for (const f of failed) if (settle(f.id)) state.byId.get(f.id).tags = before.get(f.id);
+    for (const u of updated) if (settle(u.id) && u.tags) state.byId.get(u.id).tags = u.tags;
+    for (const f of failed) if (settle(f.id)) state.byId.get(f.id)[kind] = before.get(f.id);
     if (failed.length) toast(`Failed on ${failed.length} of ${ids.length}: ${failed[0].message}`, true);
     else if (ids.length > 1) toast(`Updated ${ids.length} images`);
     changed(ids);
@@ -207,24 +225,44 @@ function mutate(ids, add = [], remove = []) {
 }
 
 // ---------- Filter ----------
-const matches = b => state.filter === "all" ? true
+const matchesTag = b => state.filter === "all" ? true
   : state.filter === "untagged" ? b.tags.length === 0
   : b.tags.includes(state.filter.slice(4));
+const matchesList = b => state.listFilter === "all" ? true
+  : state.listFilter === "nolist" ? b.lists.length === 0
+  : b.lists.includes(state.listFilter.slice(5));
+const matches = b => matchesTag(b) && matchesList(b);
 
-function tagCounts() {
+function tagCounts(bookmarks = state.all) {
   const counts = new Map();
-  for (const b of state.all) for (const t of b.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  for (const b of bookmarks) for (const t of b.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  return counts;
+}
+
+function listCounts() {
+  const counts = new Map();
+  for (const b of state.all) for (const l of b.lists) counts.set(l, (counts.get(l) || 0) + 1);
   return counts;
 }
 
 function renderFilter() {
-  const sel = $("#filter"), counts = tagCounts();
-  const opts = [["all", `All images (${state.all.length})`], ["untagged", `Untagged (${state.all.filter(b => !b.tags.length).length})`]];
+  if (!state.lists.some(l => "list:" + l.id === state.listFilter)) state.listFilter = state.listFilter === "nolist" ? "nolist" : "all";
+  // The tag drop-down only offers tags found in the selected list, with counts within it.
+  const inList = state.all.filter(matchesList), counts = tagCounts(inList), lcounts = listCounts();
+  const option = (v, label) => { const o = el("option", null, label); o.value = v; return o; };
   const names = [...counts.keys()];
   if (state.filter.startsWith("tag:") && !counts.has(state.filter.slice(4))) names.push(state.filter.slice(4));
-  for (const n of names.sort(cmp)) opts.push(["tag:" + n, `${n} (${counts.get(n) || 0})`]);
-  sel.replaceChildren(...opts.map(([v, label]) => { const o = el("option", null, label); o.value = v; return o; }));
-  sel.value = state.filter;
+  const tagOpts = [option("all", `All tags (${inList.length})`),
+    option("untagged", `Untagged (${inList.filter(b => !b.tags.length).length})`)];
+  for (const n of names.sort(cmp)) tagOpts.push(option("tag:" + n, `${n} (${counts.get(n) || 0})`));
+  $("#filter").replaceChildren(...tagOpts);
+  $("#filter").value = state.filter;
+  const listOpts = [option("all", `All lists (${state.all.length})`),
+    option("nolist", `In no list (${state.all.filter(b => !b.lists.length).length})`)];
+  for (const l of state.lists) listOpts.push(option("list:" + l.id, `${l.path} (${lcounts.get(l.id) || 0})`));
+  $("#listFilter").replaceChildren(...listOpts);
+  $("#listFilter").hidden = !state.lists.length;
+  $("#listFilter").value = state.listFilter;
 }
 
 function applyFilter() {
@@ -319,6 +357,7 @@ function updateStatus() {
   $("#selcount").textContent = n ? `${n} selected` : "";
   $("#clearSel").disabled = !n;
   $("#tagSel").disabled = !n;
+  $("#listSel").disabled = !n;
   const stale = state.view.filter(b => !matches(b)).length;
   $("#stale").hidden = !stale;
   $("#stale").textContent = `${stale} no longer match · re-apply`;
@@ -328,8 +367,8 @@ function changed(ids) {
   for (const id of ids) updateCard(state.byId.get(id));
   renderFilter();
   updateStatus();
-  if (!$("#pop").hidden) popEditor.render();
-  if (!$("#viewer").hidden) viewerEditor.render();
+  if (!$("#pop").hidden) { $(".lists", pop).hidden ? popEditor.render() : popLists.render(); }
+  if (!$("#viewer").hidden) { viewerEditor.render(); viewerLists.render(); }
 }
 
 function setFocus(i, scroll = true) {
@@ -493,19 +532,73 @@ function TagEditor(root, opts = {}) {
   };
 }
 
+// ---------- List editor (lists the targets are in, plus a picker to add one) ----------
+function ListEditor(root) {
+  const chips = el("div", "chips"), select = el("select");
+  select.title = "Add to list (L)";
+  root.append(el("h3", null, "Lists"), chips, select);
+  let targets = [];
+
+  const listsOn = () => {
+    const counts = new Map();
+    for (const id of targets) for (const l of state.byId.get(id).lists) counts.set(l, (counts.get(l) || 0) + 1);
+    return counts;
+  };
+
+  function render() {
+    const n = targets.length, counts = listsOn(), byId = new Map(state.lists.map(l => [l.id, l]));
+    const ids = [...counts.keys()].filter(id => byId.has(id))
+      .sort((a, b) => (counts.get(b) === n) - (counts.get(a) === n) || cmp(byId.get(a).path, byId.get(b).path));
+    chips.replaceChildren(...ids.map(id => {
+      const l = byId.get(id), full = counts.get(id) === n, manual = l.type === "manual";
+      const chip = el("span", "chip list" + (full ? "" : " partial"));
+      chip.append(l.path);
+      if (!full) {
+        chip.append(el("span", "n", `${counts.get(id)}/${n}`));
+        chip.title = `In ${counts.get(id)} of ${n}` + (manual ? " — click to add to all" : "");
+        if (manual) chip.addEventListener("click", ev => { if (!ev.target.closest("button")) mutate(targets, [id], [], "lists"); });
+      }
+      if (manual) {
+        const x = el("button", null, "×"); x.title = `Remove from “${l.path}”`;
+        x.addEventListener("click", () => mutate(targets.filter(t => state.byId.get(t).lists.includes(id)), [], [id], "lists"));
+        chip.append(x);
+      }
+      return chip;
+    }));
+    if (!ids.length) chips.append(el("span", "muted", "In no list"));
+    const choices = state.lists.filter(l => l.type === "manual" && counts.get(l.id) !== n);
+    select.replaceChildren(...["Add to list…", ...choices.map(l => l.path)].map((t, i) => {
+      const o = el("option", null, t); o.value = i ? choices[i - 1].id : ""; return o;
+    }));
+    select.disabled = !choices.length;
+  }
+
+  select.addEventListener("change", () => {
+    if (select.value) mutate(targets, [select.value], [], "lists");
+    select.value = "";
+  });
+
+  return { setTargets(ids) { targets = ids; render(); }, render, focus() { select.focus(); } };
+}
+
 // ---------- Pop-over ----------
 const pop = $("#pop");
 let popAnchor = null;
 const popEditor = TagEditor($(".editor", pop), { onEscape: closePopover, onEmptyEnter: closePopover });
+const popLists = ListEditor($(".lists", pop));
 
-function openPopover(ids, anchorEl) {
+// The pop-over shows either the tag editor or the list editor, never both.
+function openPopover(ids, anchorEl, lists = false) {
   if (!ids.length) return;
   popAnchor = anchorEl;
-  $("h2", pop).textContent = ids.length === 1 ? "Tag 1 image" : `Tag ${ids.length} images`;
-  popEditor.setTargets(ids);
+  const what = ids.length === 1 ? "1 image" : `${ids.length} images`;
+  $("h2", pop).textContent = lists ? `Lists for ${what}` : `Tag ${what}`;
+  $(".editor", pop).hidden = lists;
+  $(".lists", pop).hidden = !lists;
+  lists ? popLists.setTargets(ids) : popEditor.setTargets(ids);
   pop.hidden = false;
   positionPopover();
-  popEditor.focus();
+  lists ? popLists.focus() : popEditor.focus();
 }
 
 function positionPopover() {
@@ -526,8 +619,19 @@ function closePopover() {
 
 addEventListener("scroll", positionPopover, { passive: true });
 addEventListener("resize", positionPopover);
+new ResizeObserver(positionPopover).observe(pop); // keep it on screen as suggestions appear
+
+// Remember a size the user dragged to.
+try {
+  const size = JSON.parse(localStorage.getItem("popSize") || "null");
+  if (size) Object.assign(pop.style, size);
+} catch {}
+document.addEventListener("mouseup", () => {
+  if (pop.hidden || !pop.style.width) return;
+  try { localStorage.setItem("popSize", JSON.stringify({ width: pop.style.width, height: pop.style.height })); } catch {}
+});
 document.addEventListener("mousedown", e => {
-  if (!pop.hidden && !pop.contains(e.target) && !e.target.closest(".tagbtn, #tagSel")) closePopover();
+  if (!pop.hidden && !pop.contains(e.target) && !e.target.closest(".tagbtn, #tagSel, #listSel")) closePopover();
 });
 
 function tagTargets() {
@@ -554,6 +658,8 @@ const viewerEditor = TagEditor($(".editor", viewer), {
   },
 });
 
+const viewerLists = ListEditor($(".lists", viewer));
+
 function openViewer(i) {
   closePopover();
   viewer.hidden = false;
@@ -573,6 +679,7 @@ function showInViewer(i) {
   $(".next", viewer).disabled = vIndex === state.view.length - 1;
   for (const j of [vIndex - 1, vIndex + 1]) if (state.view[j]) new Image().src = `/api/assets/${encodeURIComponent(state.view[j].assetId)}`;
   viewerEditor.setTargets([b.id]);
+  viewerLists.setTargets([b.id]);
   viewerEditor.focus();
 }
 
@@ -600,13 +707,18 @@ document.addEventListener("keydown", e => {
   const mod = e.metaKey || e.ctrlKey;
 
   if (!viewer.hidden) {
+    if (typing && e.target.tagName === "SELECT" && e.key === "Escape") { e.preventDefault(); return viewerEditor.focus(); }
     if (typing) return; // the tag field handles its own keys
     if (e.key === "Escape") closeViewer();
+    else if (e.key === "l") { e.preventDefault(); viewerLists.focus(); }
     else if (e.key === "ArrowLeft" || e.key === "ArrowRight") step(e.key === "ArrowLeft" ? -1 : 1);
     else if (!mod && e.key.length === 1) viewerEditor.focus(); // start typing anywhere
     return;
   }
-  if (!pop.hidden) { if (!typing && e.key === "Escape") closePopover(); return; } // field handles its own keys
+  if (!pop.hidden) { // the tag field handles its own keys
+    if (e.key === "Escape" && !e.target.matches("input, textarea")) closePopover();
+    return;
+  }
   if (typing) {
     if (e.key === "Escape") { e.target.blur(); setFocus(state.focus); }
     return;
@@ -630,8 +742,8 @@ document.addEventListener("keydown", e => {
     else { const id = state.view[f].id; setSelected([id], !state.selected.has(id)); state.anchor = f; }
   } else if ((e.key === "Enter" || e.key === "o") && n) {
     e.preventDefault(); openViewer(f);
-  } else if (e.key === "t" && n) {
-    e.preventDefault(); const ids = tagTargets(); openPopover(ids, popAnchorFor(ids));
+  } else if ((e.key === "t" || e.key === "l") && n) {
+    e.preventDefault(); const ids = tagTargets(); openPopover(ids, popAnchorFor(ids), e.key === "l");
   } else if (e.key === "Escape") {
     setSelected([...state.selected], false); state.anchor = null;
   } else if (e.key === "f") {
@@ -644,10 +756,12 @@ document.addEventListener("keydown", e => {
 });
 
 $("#filter").addEventListener("change", e => { state.filter = e.target.value; state.focus = 0; applyFilter(); scrollTo(0, 0); });
+$("#listFilter").addEventListener("change", e => { state.listFilter = e.target.value; state.focus = 0; renderFilter(); applyFilter(); scrollTo(0, 0); });
 $("#stale").addEventListener("click", applyFilter);
 $("#selectAll").addEventListener("click", () => setSelected(state.view.map(b => b.id), true));
 $("#clearSel").addEventListener("click", () => { setSelected([...state.selected], false); state.anchor = null; });
 $("#tagSel").addEventListener("click", () => { const ids = [...state.selected]; openPopover(ids, popAnchorFor(ids)); });
+$("#listSel").addEventListener("click", () => { const ids = [...state.selected]; openPopover(ids, popAnchorFor(ids), true); });
 
 // ---------- Inbox import status ----------
 // Shown only when something is wrong, so a quiet import stays invisible.
@@ -675,10 +789,15 @@ setInterval(inboxStatus, 60000);
 (async function load() {
   $("#empty").hidden = false;
   try {
-    const [{ bookmarks }, { tags }] = await Promise.all([api("/api/bookmarks"), api("/api/tags")]);
+    const [{ bookmarks }, { tags }, { lists }] = await Promise.all([api("/api/bookmarks"), api("/api/tags"), api("/api/lists")]);
     state.all = bookmarks;
-    for (const b of bookmarks) { state.byId.set(b.id, b); b.tags.forEach(t => state.knownTags.add(t)); }
+    for (const b of bookmarks) { state.byId.set(b.id, b); b.lists = []; b.tags.forEach(t => state.knownTags.add(t)); }
     tags.forEach(t => state.knownTags.add(t));
+    // Show nested lists as "Parent / Child"
+    const byId = new Map(lists.map(l => [l.id, l]));
+    const path = l => (l.parentId && byId.has(l.parentId) ? path(byId.get(l.parentId)) + " / " : "") + l.name;
+    state.lists = lists.map(l => ({ id: l.id, name: l.name, path: path(l), type: l.type })).sort((a, b) => cmp(a.path, b.path));
+    for (const l of lists) for (const id of l.bookmarkIds) state.byId.get(id)?.lists.push(l.id);
     renderFilter();
     applyFilter();
   } catch (e) {
