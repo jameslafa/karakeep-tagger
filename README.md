@@ -55,6 +55,7 @@ All settings go in `.env`:
 | `TAGGER_HOSTS` | for remote access | Host names you open the tagger by, comma-separated, no port. `localhost` and `127.0.0.1` always work. |
 | `TAGGER_PASSWORD` | no | Require this password (HTTP basic auth, any user name) |
 | `TAGGER_PUBLISH` | no | Host address and port Docker publishes on. Default `127.0.0.1:8080` |
+| `TAGGER_BIND` | no | Address the server listens on. Default `127.0.0.1`, so `python3 server.py` is local only; the Docker image sets `0.0.0.0` and Docker decides what is published |
 | `TAGGER_CONCURRENCY` | no | Parallel Karakeep requests for bulk tagging. Default `8` |
 | `TAGGER_BOARDS_LIST` | no | Name of the top-level Karakeep list that holds the moodboards. Default `Moodboards` |
 

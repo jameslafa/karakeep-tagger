@@ -25,6 +25,9 @@ from karakeep import API_KEY, KARAKEEP_URL, KarakeepError, clean_ids, is_image, 
 # Optional separate key for the inbox importer (defaults to KARAKEEP_API_KEY)
 INBOX_API_KEY = os.environ.get("KARAKEEP_INBOX_API_KEY") or API_KEY
 PORT = int(os.environ.get("PORT", "8080"))
+# Address to listen on. Local only by default; the Docker image sets 0.0.0.0 and Docker
+# decides what is published (TAGGER_PUBLISH).
+BIND = os.environ.get("TAGGER_BIND", "127.0.0.1")
 # Optional HTTP basic auth in front of the app (user name is ignored).
 PASSWORD = os.environ.get("TAGGER_PASSWORD", "")
 WORKERS = int(os.environ.get("TAGGER_CONCURRENCY", "8"))
@@ -359,9 +362,9 @@ def main():
     if not KARAKEEP_URL or not API_KEY:
         sys.exit("KARAKEEP_URL and KARAKEEP_API_KEY must be set")
     INBOX = inbox.start(KARAKEEP_URL, INBOX_API_KEY, kk)
-    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    httpd = ThreadingHTTPServer((BIND, PORT), Handler)
     httpd.daemon_threads = True
-    print(f"karakeep-tagger on :{PORT} -> {KARAKEEP_URL}", flush=True)
+    print(f"karakeep-tagger on {BIND}:{PORT} -> {KARAKEEP_URL}", flush=True)
     httpd.serve_forever()
 
 
