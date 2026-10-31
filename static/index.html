@@ -170,7 +170,7 @@ const state = {
   all: [],              // image bookmarks, Karakeep order
   byId: new Map(),
   knownTags: new Set(), // every tag name in Karakeep, for autocomplete
-  lists: [],            // Karakeep lists {id, name, path, type}; each bookmark has b.lists = [list ids]
+  lists: [],            // Karakeep lists {id, name, path, type, board}; each bookmark has b.lists = [list ids]
   view: [],             // bookmarks currently shown (snapshot taken when the filter is applied)
   filter: "all",        // tag filter: "all" | "untagged" | "tag:<name>"
   listFilter: "all",    // list filter: "all" | "nolist" | "list:<id>"; combined with the tag filter
@@ -253,7 +253,8 @@ function listCounts() {
 }
 
 function renderFilter() {
-  if (!state.lists.some(l => "list:" + l.id === state.listFilter)) state.listFilter = state.listFilter === "nolist" ? "nolist" : "all";
+  const lists = state.lists.filter(l => !l.board);
+  if (!lists.some(l => "list:" + l.id === state.listFilter)) state.listFilter = state.listFilter === "nolist" ? "nolist" : "all";
   // The tag drop-down only offers tags found in the selected list, with counts within it.
   const inList = state.all.filter(matchesList), counts = tagCounts(inList), lcounts = listCounts();
   const option = (v, label) => { const o = el("option", null, label); o.value = v; return o; };
@@ -266,9 +267,9 @@ function renderFilter() {
   $("#filter").value = state.filter;
   const listOpts = [option("all", `All lists (${state.all.length})`),
     option("nolist", `In no list (${state.all.filter(b => !b.lists.length).length})`)];
-  for (const l of state.lists) listOpts.push(option("list:" + l.id, `${l.path} (${lcounts.get(l.id) || 0})`));
+  for (const l of lists) listOpts.push(option("list:" + l.id, `${l.path} (${lcounts.get(l.id) || 0})`));
   $("#listFilter").replaceChildren(...listOpts);
-  $("#listFilter").hidden = !state.lists.length;
+  $("#listFilter").hidden = !lists.length;
   $("#listFilter").value = state.listFilter;
 }
 
@@ -594,7 +595,7 @@ function ListEditor(root) {
       return chip;
     }));
     if (!ids.length) chips.append(el("span", "muted", "In no list"));
-    const choices = state.lists.filter(l => l.type === "manual" && counts.get(l.id) !== n);
+    const choices = state.lists.filter(l => l.type === "manual" && !l.board && counts.get(l.id) !== n);
     select.replaceChildren(...["Add to list…", ...choices.map(l => l.path)].map((t, i) => {
       const o = el("option", null, t); o.value = i ? choices[i - 1].id : ""; return o;
     }));
@@ -835,7 +836,11 @@ setInterval(inboxStatus, 60000);
     // Show nested lists as "Parent / Child"
     const byId = new Map(lists.map(l => [l.id, l]));
     const path = l => (l.parentId && byId.has(l.parentId) ? path(byId.get(l.parentId)) + " / " : "") + l.name;
-    state.lists = lists.map(l => ({ id: l.id, name: l.name, path: path(l), type: l.type })).sort((a, b) => cmp(a.path, b.path));
+    // Moodboards and their parent list have the Board selector; keep them out of the list drop-downs
+    const boardIds = new Set(boards.map(b => b.id));
+    for (const b of boards) if (byId.get(b.id)?.parentId) boardIds.add(byId.get(b.id).parentId);
+    state.lists = lists.map(l => ({ id: l.id, name: l.name, path: path(l), type: l.type, board: boardIds.has(l.id) }))
+      .sort((a, b) => cmp(a.path, b.path));
     for (const l of lists) for (const id of l.bookmarkIds) state.byId.get(id)?.lists.push(l.id);
     state.boards = boards;
     try { state.board = localStorage.getItem("activeBoard") || ""; } catch {}
