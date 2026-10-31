@@ -145,9 +145,12 @@ def save_board(board_id, body):
         for sec in sections:
             if not isinstance(sec, dict) or not isinstance(sec.get("id"), str) or not ID_RE.match(sec["id"]):
                 raise ValueError("each section needs an id")
+            cols = sec.get("columns")  # None: the board's setting
+            if cols is not None and (cols not in (1, 2, 3, 4) or isinstance(cols, bool)):
+                raise ValueError("section columns must be 1 to 4")
             clean.append({"id": sec["id"], "title": clean_text(sec.get("title", ""), "section title", 200),
                           "description": clean_text(sec.get("description", ""), "section description", 2000),
-                          "items": clean_ids(sec.get("items", []), "section items")})
+                          "items": clean_ids(sec.get("items", []), "section items"), "columns": cols})
         notes = body.get("notes", {})
         if not isinstance(notes, dict) or not all(isinstance(k, str) and ID_RE.match(k) for k in notes):
             raise ValueError("notes must map image ids to text")

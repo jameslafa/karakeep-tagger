@@ -1,10 +1,10 @@
 FROM python:3.13-slim
 WORKDIR /app
 # pillow resizes images (and with pillow-heif converts HEIC photos from the inbox);
-# reportlab and the DejaVu fonts make moodboard PDFs
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+# reportlab makes moodboard PDFs, with the fonts in fonts/
 RUN pip install --no-cache-dir pillow==11.3.0 pillow-heif==1.1.1 reportlab==4.2.5
 COPY *.py ./
+COPY fonts ./fonts
 COPY static ./static
 RUN useradd --system --no-create-home tagger && mkdir /data && chown tagger /data
 USER tagger

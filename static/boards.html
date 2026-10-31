@@ -64,6 +64,7 @@
   .section .head .title { font-weight: 600; }
   .section .head .tools { display: flex; gap: 4px; }
   .section .head .tools button { padding: 3px 8px; }
+  .section .head .tools select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; font-size: 12px; }
   .section.unsorted { background: none; border-style: dashed; }
   .section.unsorted h2 { font-size: 13px; margin: 0; }
   .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; min-height: 80px;
@@ -350,6 +351,14 @@ function sectionBlock(s, i) {
     const btn = el("button", null, label); btn.title = tip; btn.disabled = disabled;
     btn.addEventListener("click", fn); tools.append(btn);
   };
+  // PDF columns for this section; "Default" follows the board's setting
+  const cols = el("select");
+  cols.title = "Columns of images for this section in the PDF";
+  cols.append(...[["", `Default (${b.columns})`], ["1", "1 column"], ["2", "2 columns"], ["3", "3 columns"], ["4", "4 columns"]]
+    .map(([v, label]) => { const o = el("option", null, label); o.value = v; return o; }));
+  cols.value = s.columns ? String(s.columns) : "";
+  cols.addEventListener("change", () => { s.columns = cols.value ? +cols.value : null; changed(); });
+  tools.append(cols);
   tool("↑", "Move section up", () => moveSection(i, -1), i === 0);
   tool("↓", "Move section down", () => moveSection(i, 1), i === b.sections.length - 1);
   tool("×", "Delete section (its images go back to Unsorted)", () => deleteSection(i));
@@ -374,14 +383,14 @@ function deleteSection(i) {
 }
 
 $("#addSection").addEventListener("click", () => {
-  state.board.sections.push({ id: newId(), title: "", description: "", items: [] });
+  state.board.sections.push({ id: newId(), title: "", description: "", items: [], columns: null });
   changed(); renderSections();
   [...$("#sections").querySelectorAll(".section .title")].pop().focus();
 });
 
 $("#name").addEventListener("input", e => { state.board.name = e.target.value; changed(); });
 $("#description").addEventListener("input", e => { state.board.description = e.target.value; changed(); });
-$("#columns").addEventListener("change", e => { state.board.columns = +e.target.value; changed(); });
+$("#columns").addEventListener("change", e => { state.board.columns = +e.target.value; changed(); renderSections(); }); // updates "Default (n)"
 
 async function deleteBoard(b) {
   if (!confirm(`Delete the moodboard “${b.name}”? Its sections and notes are lost; the images stay in Karakeep.`)) return;

@@ -127,11 +127,12 @@ board. Open **Moodboards** in the header of the tagger to manage them.
    automatically. The ⧉ next to a board in the sidebar duplicates it, with the same
    sections, images and notes.
 4. **Download PDF** builds a PDF on the server and downloads it, in colour and without a
-   print dialog. It is made for screens: pages are A4 wide and as tall as their content, so
-   it scrolls like a web page. The first page has the title, description and cover; then
-   each section is one page with its images in a masonry grid (each image goes into the
-   shortest column) and their notes underneath. *PDF columns* sets the number of columns,
-   1 to 4 (default 2). A very long section continues on a second page, since PDF viewers
+   print dialog. It is made for screens, with a dark gallery look: pages are A4 wide and as
+   tall as their content, so it scrolls like a web page. The first page has the cover edge
+   to edge, then the title and description; each section is one page with a numbered
+   heading and its images in a masonry grid (each image goes into the shortest column),
+   with their notes underneath. *PDF columns* sets the number of columns,
+   1 to 4 (default 2); each section can override it with its own setting. A very long section continues on a second page, since PDF viewers
    don't open pages taller than about 5 m. Images are resized to 1600 px so the file stays
    small enough to send by chat or email.
 
@@ -139,7 +140,7 @@ New images land in *Unsorted*. Once a board has sections, *Unsorted* is a stagin
 and is left out of the PDF; a board without sections prints everything in it.
 
 The board's title, description and images live in Karakeep. Sections, order, notes, the
-cover and the column count are kept in a JSON file per board in the `/data` volume (`moodboards/<list id>.json`).
+cover and the column counts are kept in a JSON file per board in the `/data` volume (`moodboards/<list id>.json`).
 Deleting a board deletes its Karakeep list and that file, never the images.
 
 ## Inbox import
@@ -211,8 +212,7 @@ Python 3.8 or newer, no dependencies for tagging. The port is `PORT` (default `8
 Note that the server listens on all network interfaces; `TAGGER_PUBLISH` only applies to
 Docker. For moodboards and the inbox, set `TAGGER_DATA_DIR` to a writable directory
 (default `/data`). `pip install pillow reportlab` for moodboard PDFs and resized images
-on board pages; add `pillow-heif` if you want HEIC files converted. The Docker image also
-installs the DejaVu fonts so PDFs can show most characters (otherwise Helvetica, Latin only).
+on board pages; add `pillow-heif` if you want HEIC files converted.
 
 ## Keyboard shortcuts
 
@@ -254,4 +254,6 @@ Lists
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The fonts in `fonts/` (Cormorant Garamond and Inter, fixed weights cut from
+the Google Fonts releases) are under the SIL Open Font License, see the `OFL-*.txt` files
+next to them.
